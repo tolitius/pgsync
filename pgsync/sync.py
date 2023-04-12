@@ -1048,6 +1048,31 @@ class Sync(Base, metaclass=Singleton):
         while True:
             await self._async_poll_redis()
 
+    @exception
+    def is_event_with_empty_ids(self, event: dict) -> bool:
+        """
+        expects an event payload from postgres notification queue
+        that has two keys: 'new' and 'old':
+
+        Payload(
+            ...
+            old={'id': 1, 'foreign_id': 2},
+            new={'id': 4, 'foreign_id': 3},
+        ),
+
+        returns True if both 'new' and 'old' are there
+                and have non None values
+        """
+        new = event['new']
+        old = event['old']
+
+        if old and None in old.values():
+            return True
+        if new and None in new.values():
+            return True
+
+        return False
+
     @threaded
     @exception
     def poll_db(self) -> None:
@@ -1091,10 +1116,14 @@ class Sync(Base, metaclass=Singleton):
                 notification: AnyStr = conn.notifies.pop(0)
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
-                    if self.index in payload["indices"]:
-                        payloads.append(payload)
-                        logger.debug(f"on_notify: {payload}")
-                        self.count["db"] += 1
+                    # make sure none of the ids (primary | foreign keys) are missing
+                    if self.is_event_with_empty_ids(payload):
+                        if self.index in payload["indices"]:
+                            payloads.append(payload)
+                            logger.debug(f"on_notify: {payload}")
+                            self.count["db"] += 1
+                    else:
+                        logger.error(f"missing primary | foreign keys: {payload}")
 
     @exception
     def async_poll_db(self) -> None:
