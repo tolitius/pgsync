@@ -21,7 +21,7 @@ def get_version() -> str:
 # Package meta-data.
 NAME = "pgsync"
 DESCRIPTION = "Postgres to Elasticsearch/OpenSearch sync"
-URL = "https://github.com/toluaina/pgsync"
+URL = "https://github.com/tolitius/pgsync"
 AUTHOR = MAINTAINER = "Tolu Aina"
 AUTHOR_EMAIL = MAINTAINER_EMAIL = "tolu@pgsync.com"
 PYTHON_REQUIRES = ">=3.7.0"
@@ -88,8 +88,8 @@ setup(
     version=VERSION,
     zip_safe=False,
     project_urls={
-        "Bug Reports": "https://github.com/toluaina/pgsync/issues",
-        "Funding": "https://github.com/sponsors/toluaina",
+        "Bug Reports": "https://github.com/tolitius/pgsync/issues",
+        "Funding": "https://github.com/sponsors/tolitius",
         "Source": URL,
         "Web": "https://pgsync.com",
         "Documentation": "https://pgsync.com",

@@ -337,6 +337,43 @@ class Sync(Base, metaclass=Singleton):
             )
         return f"{PRIMARY_KEY_DELIMITER}".join(map(str, primary_keys))
 
+    @exception
+    def is_event_with_empty_ids(self, event: dict) -> bool:
+        """
+        expects an event payload from postgres notification queue
+        that has two keys: 'new' and 'old':
+
+        Payload(
+            ...
+            old={'id': 1, 'foreign_1_id': 2, 'foreign_2_id': 12},
+            new={'id': 4, 'foreign_1_id': 3, 'foreign_2_id': None},
+        ),
+
+        returns True if 'new' records are there
+                but have None ids in them
+                that are skippable as per settings.SKIP_NULL_KEYS
+        """
+
+        logger.debug(f"validating event: {event}")
+
+        new = event['new']
+
+        if new:
+            empty_keys = {i for i in new if new[i]==None}
+
+            # find intersection b/w empty_keys and settings.SKIP_NULL_KEYS list
+            should_skip = [value for value in empty_keys if value in settings.SKIP_NULL_KEYS]
+
+            if not should_skip:   # if empty list, which means no keys are empty OR empty keys are not in settings.SKIP_NULL_KEYS
+                if empty_keys:
+                    logger.info(f"detected empty primary | foreign keys {empty_keys}, but not skipping this event because these keys are not in settings.SKIP_NULL_KEYS which is currently set to {settings.SKIP_NULL_KEYS}")
+                return False
+            else:                 # if there is at least one key that is in settings.SKIP_NULL_KEYS
+                logger.debug(f"skipping {event} as it has empty {should_skip} keys that are in settings.SKIP_NULL_KEYS {settings.SKIP_NULL_KEYS}")
+                return True       # we will return true, which means these record will be skipped
+
+        return False
+
     def logical_slot_changes(
         self,
         txmin: Optional[int] = None,
@@ -405,38 +442,46 @@ class Sync(Base, metaclass=Singleton):
                 # TODO: optimize this so we are not parsing the same row twice
                 try:
                     payload: Payload = self.parse_logical_slot(row.data)
+                    logger.debug(f"logical_slot_changes: parsed payload {payload}")
                 except Exception as e:
                     logger.exception(
                         f"Error parsing row: {e}\nRow data: {row.data}"
                     )
                     raise
-                payloads.append(payload)
 
-                j: int = i + 1
-                if j < len(rows):
-                    try:
-                        payload2: Payload = self.parse_logical_slot(
-                            rows[j].data
-                        )
-                    except Exception as e:
-                        logger.exception(
-                            f"Error parsing row: {e}\nRow data: {rows[j].data}"
-                        )
-                        raise
+                if not self.is_event_with_empty_ids({'new': payload.new}):
+                    payloads.append(payload)
 
-                    if (
-                        payload.tg_op != payload2.tg_op
-                        or payload.table != payload2.table
-                    ):
+                    j: int = i + 1
+                    if j < len(rows):
+                        try:
+                            payload2: Payload = self.parse_logical_slot(
+                                rows[j].data
+                            )
+                        except Exception as e:
+                            logger.exception(
+                                f"Error parsing row: {e}\nRow data: {rows[j].data}"
+                            )
+                            raise
+
+                        if (
+                            payload.tg_op != payload2.tg_op
+                            or payload.table != payload2.table
+                        ):
+                            logger.debug(f"logical_slot_changes: elastic bulking payloads {payloads} (partial tx: {payload} vs. {payload2})")
+                            self.search_client.bulk(
+                                self.index, self._payloads(payloads)
+                            )
+                            payloads: list = []
+                    elif j == len(rows):
+                        logger.debug(f"logical_slot_changes: elastic bulking payloads {payloads} (full tx)")
                         self.search_client.bulk(
                             self.index, self._payloads(payloads)
                         )
                         payloads: list = []
-                elif j == len(rows):
-                    self.search_client.bulk(
-                        self.index, self._payloads(payloads)
-                    )
-                    payloads: list = []
+
+            logger.debug(f"logical_slot_changes: pulling logical slot changes: txmin: {txmin}, txmax: {txmax}, upto_nchanges: {upto_nchanges}, limit: {limit}, offset: {offset}")
+
             self.logical_slot_get_changes(
                 self.__name,
                 txmin=txmin,
@@ -445,6 +490,7 @@ class Sync(Base, metaclass=Singleton):
                 limit=limit,
                 offset=offset,
             )
+            logger.debug(f"logical_slot_changes: pulled logical slot changes")
             offset += limit
             total += len(changes)
             self.count["xlog"] += len(rows)
@@ -1048,31 +1094,6 @@ class Sync(Base, metaclass=Singleton):
         while True:
             await self._async_poll_redis()
 
-    @exception
-    def is_event_with_empty_ids(self, event: dict) -> bool:
-        """
-        expects an event payload from postgres notification queue
-        that has two keys: 'new' and 'old':
-
-        Payload(
-            ...
-            old={'id': 1, 'foreign_id': 2},
-            new={'id': 4, 'foreign_id': 3},
-        ),
-
-        returns True if both 'new' and 'old' are there
-                and have non None values
-        """
-        new = event['new']
-        old = event['old']
-
-        if old and None in old.values():
-            return True
-        if new and None in new.values():
-            return True
-
-        return False
-
     @threaded
     @exception
     def poll_db(self) -> None:
@@ -1117,10 +1138,10 @@ class Sync(Base, metaclass=Singleton):
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
                     # make sure none of the ids (primary | foreign keys) are missing
-                    if self.is_event_with_empty_ids(payload):
+                    if not self.is_event_with_empty_ids(payload):
                         if self.index in payload["indices"]:
                             payloads.append(payload)
-                            logger.debug(f"on_notify: {payload}")
+                            logger.debug(f"added to payloads from database: {payload}")
                             self.count["db"] += 1
                     else:
                         logger.error(f"missing primary | foreign keys: {payload}")
@@ -1143,9 +1164,12 @@ class Sync(Base, metaclass=Singleton):
             if notification.channel == self.database:
                 payload = json.loads(notification.payload)
                 if self.index in payload["indices"]:
-                    self.redis.push([payload])
-                    logger.debug(f"on_notify: {payload}")
-                    self.count["db"] += 1
+                    if not self.is_event_with_empty_ids(payload):
+                        self.redis.push([payload])
+                        logger.debug(f"pushed_to_redis: {payload}")
+                        self.count["db"] += 1
+                    else:
+                        logger.error(f"skipping redis push due to the event missing primary | foreign keys: {payload}")
 
     def refresh_views(self) -> None:
         self._refresh_views()
