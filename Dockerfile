@@ -1,10 +1,13 @@
-FROM python:3.9
-ARG WORKDIR=/code
-RUN mkdir $WORKDIR
-ADD ./examples/ $WORKDIR/examples
-WORKDIR $WORKDIR
-RUN pip install git+https://github.com/toluaina/pgsync.git
-COPY ./docker/wait-for-it.sh wait-for-it.sh
-COPY ./docker/runserver.sh runserver.sh
-RUN chmod +x wait-for-it.sh
-RUN chmod +x runserver.sh
+FROM python:3.8.9-slim
+
+#ARG WORKDIR=/code
+#RUN mkdir $WORKDIR
+
+RUN apt update \
+ && apt install -y git \
+ && apt-get install -y procps \
+ && apt install -y vim
+
+WORKDIR /code
+
+RUN pip install -e git+https://github.com/tolitius/pgsync.git@main#egg=pgsync

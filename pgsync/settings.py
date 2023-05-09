@@ -22,6 +22,10 @@ env.read_env(path=os.path.join(os.getcwd(), ".env"))
 BLOCK_SIZE = env.int("BLOCK_SIZE", default=2048 * 10)
 CHECKPOINT_PATH = env.str("CHECKPOINT_PATH", default="./")
 JOIN_QUERIES = env.bool("JOIN_QUERIES", default=True)
+
+# skip updates for records with empty primary | foreign keys
+SKIP_NULL_KEYS = env.list("SKIP_NULL_KEYS", default=[])
+
 # batch size for LOGICAL_SLOT_CHANGES for minimizing tmp file disk usage
 LOGICAL_SLOT_CHUNK_SIZE = env.int("LOGICAL_SLOT_CHUNK_SIZE", default=5000)
 # stdout log interval (in secs)

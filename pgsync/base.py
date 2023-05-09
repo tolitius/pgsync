@@ -93,6 +93,9 @@ class Payload(object):
         self.xmin: str = xmin
         self.indices: t.List[str] = indices
 
+    def __repr__(self):
+        return f'Payload("tg_op: {self.tg_op}, table: {self.table}, schema: {self.schema}, old: {self.old}, new: {self.new}, xmin: {self.xmin}, indices: {self.indices})'
+
     @property
     def data(self) -> dict:
         """Extract the payload data from the payload."""
