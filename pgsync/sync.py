@@ -992,6 +992,8 @@ class Sync(Base, metaclass=Singleton):
 
         count: int = self.fetchcount(node._subquery)
 
+        logger.debug(f"sync started: {count} events to sync")
+
         with click.progressbar(
             length=count,
             show_pos=True,
@@ -1009,6 +1011,9 @@ class Sync(Base, metaclass=Singleton):
                 row: dict = Transform.transform(row, self.nodes)
 
                 row[META] = Transform.get_primary_keys(keys)
+
+                if i % 100 == 0:
+                    logger.debug(f"synced {i} events")
 
                 if self.verbose:
                     print(f"{(i+1)})")
@@ -1246,11 +1251,12 @@ class Sync(Base, metaclass=Singleton):
         """Pull data from db."""
         txmin: int = self.checkpoint
         txmax: int = self.txid_current
-        logger.debug(f"pull txmin: {txmin} - txmax: {txmax}")
+        logger.debug(f"pulling events from database from txmin: {txmin} to txmax: {txmax}")
         # forward pass sync
         self.search_client.bulk(
             self.index, self.sync(txmin=txmin, txmax=txmax)
         )
+        logger.debug(f"pulled initial set of events from the database")
         # now sync up to txmax to capture everything we may have missed
         self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
         self.checkpoint: int = txmax or self.txid_current
