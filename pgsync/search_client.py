@@ -214,6 +214,7 @@ class SearchClient(object):
             'uid': ['a002', 'a009'],
         }
         """
+
         fields = fields or {}
         search = self.Search(using=self.__client, index=index)
         # explicitly exclude all fields since we only need the doc _id
@@ -231,7 +232,9 @@ class SearchClient(object):
                 )
             )
         try:
+            logger.debug(f"_scanning search: {search.to_dict()}")
             for hit in search.scan():
+                logger.debug(f"_scan hit {hit.meta.id}")
                 yield hit.meta.id
         except elasticsearch.exceptions.RequestError as e:
             logger.warning(f"RequestError: {e}")
@@ -258,6 +261,7 @@ class SearchClient(object):
         body: dict = defaultdict(lambda: defaultdict(dict))
 
         if not self.__client.indices.exists(index):
+
             if setting:
                 body.update(**{"settings": {"index": setting}})
 
@@ -294,6 +298,7 @@ class SearchClient(object):
         Get the Elasticsearch/OpenSearch mapping from the schema transform.
         """  # noqa D200
         for node in tree.traverse_post_order():
+
             rename: dict = node.transform.get("rename", {})
             mapping: dict = node.transform.get("mapping", {})
 
