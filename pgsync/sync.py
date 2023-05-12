@@ -372,10 +372,10 @@ class Sync(Base, metaclass=Singleton):
 
             if not should_skip:   # if empty list, which means no keys are empty OR empty keys are not in settings.SKIP_NULL_KEYS
                 if empty_keys:
-                    logger.info(f"detected empty primary | foreign keys {empty_keys}, but not skipping this event because these keys are not in settings.SKIP_NULL_KEYS which is currently set to {settings.SKIP_NULL_KEYS}")
+                    logger.info(f"detected keys with empty values {empty_keys}, but not skipping this event because these keys are not in settings.SKIP_NULL_KEYS which is currently set to {settings.SKIP_NULL_KEYS}")
                 return False
             else:                 # if there is at least one key that is in settings.SKIP_NULL_KEYS
-                logger.debug(f"skipping {event} as it has empty {should_skip} keys that are in settings.SKIP_NULL_KEYS {settings.SKIP_NULL_KEYS}")
+                logger.debug(f"skipping event {event} as it has empty {should_skip} keys that are in settings.SKIP_NULL_KEYS {settings.SKIP_NULL_KEYS}")
                 return True       # we will return true, which means these record will be skipped
 
         return False
@@ -474,13 +474,11 @@ class Sync(Base, metaclass=Singleton):
                             payload.tg_op != payload2.tg_op
                             or payload.table != payload2.table
                         ):
-                            logger.debug(f"logical_slot_changes: elastic bulking payloads {payloads} (partial tx: {payload} vs. {payload2})")
                             self.search_client.bulk(
                                 self.index, self._payloads(payloads)
                             )
                             payloads: list = []
                     elif j == len(rows):
-                        logger.debug(f"logical_slot_changes: elastic bulking payloads {payloads} (full tx)")
                         self.search_client.bulk(
                             self.index, self._payloads(payloads)
                         )
