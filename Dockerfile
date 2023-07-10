@@ -6,7 +6,8 @@ FROM python:3.8.9-slim
 RUN apt update \
  && apt install -y git \
  && apt-get install -y procps \
- && apt install -y vim
+ && apt install -y vim \
+ && apt install -y curl
 
 WORKDIR /code
 
