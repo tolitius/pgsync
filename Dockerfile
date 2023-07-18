@@ -7,6 +7,7 @@ RUN apt update \
  && apt install -y git \
  && apt-get install -y procps \
  && apt install -y vim \
+ && apt install -y jq \
  && apt install -y curl
 
 WORKDIR /code
