@@ -228,6 +228,7 @@ LOGGING = _get_logging_config(
         "urllib3.connectionpool",
         "urllib3.util.retry",
         "elasticsearch",
+        "opensearch",
         "elastic_transport.transport",
     ]
 )
