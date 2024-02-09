@@ -46,6 +46,7 @@ from .search_client import SearchClient
 from .singleton import Singleton
 from .transform import Transform
 from .utils import (
+    now,
     chunks,
     compiled_query,
     config_loader,
@@ -868,6 +869,8 @@ class Sync(Base, metaclass=Singleton):
 
         node: Node = self.tree.get_node(payload.table, payload.schema)
 
+        logger.debug(f"about to sync changes from table: {node.name}, changes: {payloads}")
+
         for payload in payloads:
             # this is only required for the non truncate tg_ops
             if payload.data:
@@ -1325,7 +1328,7 @@ class Sync(Base, metaclass=Singleton):
 
     def _status(self, label: str) -> None:
         sys.stdout.write(
-            f"{label} {self.database}:{self.index} "
+            f"{now()}: {label} {self.database}:{self.index} "
             f"Xlog: [{self.count['xlog']:,}] => "
             f"Db: [{self.count['db']:,}] => "
             f"Redis: [{self.redis.qsize:,}] => "

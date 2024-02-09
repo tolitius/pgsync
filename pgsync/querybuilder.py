@@ -2,6 +2,7 @@
 import threading
 import typing as t
 from collections import defaultdict
+import logging
 
 import sqlalchemy as sa
 
@@ -10,6 +11,7 @@ from .constants import OBJECT, ONE_TO_MANY, ONE_TO_ONE, SCALAR
 from .exc import ForeignKeyError
 from .node import Node
 
+logger = logging.getLogger(__name__)
 
 class QueryBuilder(threading.local):
     """Query builder."""
@@ -64,6 +66,9 @@ class QueryBuilder(threading.local):
         """
         i: int = 0
         expression: sa.sql.elements.BinaryExpression = None
+
+        # logger.debug(f"making a JSON object from these columns: '{columns}'")
+
         while i < len(columns):
             chunk: t.List = columns[i : i + chunk_size]
             if i == 0:
@@ -81,7 +86,9 @@ class QueryBuilder(threading.local):
             i += chunk_size
 
         if expression is None:
-            raise RuntimeError("invalid expression")
+            error = f"could not create a JSON object from columns '{columns}'"
+            logger.exception(error)
+            raise RuntimeError(error)
 
         return expression
 
