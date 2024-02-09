@@ -1,5 +1,4 @@
 """PGSync utils."""
-
 import json
 import logging
 import os
@@ -7,6 +6,7 @@ import sys
 import threading
 import typing as t
 from datetime import timedelta
+import datetime
 from string import Template
 from time import time
 from urllib.parse import ParseResult, urlparse
@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 HIGHLIGHT_BEGIN = "\033[4m"
 HIGHLIGHT_END = "\033[0m:"
 
+def now():
+    return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 def chunks(value: list, size: int) -> list:
     """Yield successive n-sized chunks from l"""
