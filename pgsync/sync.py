@@ -16,6 +16,7 @@ import sqlalchemy as sa
 import sqlparse
 from psycopg2 import OperationalError
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from kafka import KafkaProducer
 
 from . import __version__, settings
 from .base import Base, Payload
@@ -108,6 +109,13 @@ class Sync(Base, metaclass=Singleton):
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
+        # setup kafka-produce _iff_ env/bootstrap_servers is set
+        if settings.KAFKA_BOOTSTRAP_SERVERS:
+            self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                                                key_serializer=str.encode,
+                                                value_serializer=lambda val_u: json.dumps(val_u).encode("utf-8"),)
+        else:
+            self.kafka_producer = None
 
     def validate(self, repl_slots: bool = True) -> None:
         """Perform all validation right away."""
@@ -1063,6 +1071,15 @@ class Sync(Base, metaclass=Singleton):
 
                 if self.pipeline:
                     doc["pipeline"] = self.pipeline
+
+                # produce the document to kafka before pushing to elastic
+                if self.kafka_producer:
+                    message_key = doc["_id"]
+                    doc["_transaction-meta"] = {"checkpoint": txmin,
+                                                "current-transaction-id": txmax}
+                    self.kafka_producer.produce(topic=settings.KAFKA_TOPIC,
+                                                key=message_key,
+                                                value=doc)
 
                 yield doc
 
