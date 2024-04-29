@@ -12,3 +12,4 @@ redis
 requests-aws4auth
 sqlalchemy
 sqlparse
+kafka-python
