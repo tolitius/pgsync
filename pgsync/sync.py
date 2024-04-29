@@ -111,6 +111,7 @@ class Sync(Base, metaclass=Singleton):
         self.count: dict = dict(xlog=0, db=0, redis=0)
         # setup kafka-produce _iff_ env/bootstrap_servers is set
         if settings.KAFKA_BOOTSTRAP_SERVERS:
+            logger.info(f"ready to produce documents on topic {settings.KAFKA_TOPIC} via {settings.KAFKA_BOOTSTRAP_SERVERS}")
             self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
                                                 key_serializer=str.encode,
                                                 value_serializer=lambda val_u: json.dumps(val_u).encode("utf-8"),)
@@ -1077,9 +1078,9 @@ class Sync(Base, metaclass=Singleton):
                     message_key = doc["_id"]
                     doc["_transaction-meta"] = {"checkpoint": txmin,
                                                 "current-transaction-id": txmax}
-                    self.kafka_producer.produce(topic=settings.KAFKA_TOPIC,
-                                                key=message_key,
-                                                value=doc)
+                    self.kafka_producer.send(topic=settings.KAFKA_TOPIC,
+                                             key=message_key,
+                                             value=doc)
 
                 yield doc
 
