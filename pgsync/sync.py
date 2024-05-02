@@ -58,6 +58,7 @@ from .utils import (
     threaded,
     Timer,
 )
+from kafka import KafkaProducer
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +107,15 @@ class Sync(Base, metaclass=Singleton):
             self.validate(repl_slots=repl_slots)
             self.create_setting()
         if self.plugins:
+            logger.debug(f"plugins available for transformations are {self.plugins}")
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
+        if settings.KAFKA_BOOTSTRAP_SERVERS:
+            self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, key_serializer=str.encode, value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+            logger.debug(f"kafka_producer is enabled to publish transformed docs to topic {settings.KAFKA_TOPIC_NAME}")
+        else:
+            self.kafka_producer = None
 
     def validate(self, repl_slots: bool = True) -> None:
         """Perform all validation right away."""
@@ -1064,6 +1071,12 @@ class Sync(Base, metaclass=Singleton):
 
                 if self.pipeline:
                     doc["pipeline"] = self.pipeline
+
+                if self.kafka_producer:
+                    doc_id = doc["_id"]
+                    transaction_id = txmin or txmax
+                    doc["_transaction_id"] = transaction_id
+                    self.kafka_producer.send(settings.KAFKA_TOPIC_NAME, key=doc_id, value=doc)
 
                 yield doc
 

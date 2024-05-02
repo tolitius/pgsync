@@ -177,7 +177,9 @@ REDIS_SCHEME = env.str("REDIS_SCHEME", default="redis")
 REDIS_SOCKET_TIMEOUT = env.int("REDIS_SOCKET_TIMEOUT", default=5)
 # number of items to write to Redis at a time
 REDIS_WRITE_CHUNK_SIZE = env.int("REDIS_WRITE_CHUNK_SIZE", default=500)
-
+# Kafka:
+KAFKA_BOOTSTRAP_SERVERS = env.str("KAFKA_BOOTSTRAP_SERVERS", default=None)
+KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
 
 # Logging:
 def _get_logging_config(silent_loggers: t.Optional[str] = None):
