@@ -6,15 +6,15 @@
 #
 async-timeout==4.0.3
     # via redis
-black==23.12.1
+black==24.4.2
     # via -r requirements/dev.in
-boto3==1.34.14
+boto3==1.34.95
     # via -r requirements/base.in
-botocore==1.34.14
+botocore==1.34.95
     # via
     #   boto3
     #   s3transfer
-certifi==2023.11.17
+certifi==2024.2.2
     # via
     #   elastic-transport
     #   opensearch-py
@@ -27,37 +27,37 @@ click==8.1.7
     # via
     #   -r requirements/base.in
     #   black
-coverage[toml]==7.4.0
+coverage[toml]==7.5.0
     # via
     #   -r requirements/dev.in
     #   pytest-cov
 distlib==0.3.8
     # via virtualenv
-elastic-transport==8.11.0
+elastic-transport==8.13.0
     # via elasticsearch
-elasticsearch==8.11.1
+elasticsearch==8.13.0
     # via
     #   -r requirements/base.in
     #   elasticsearch-dsl
-elasticsearch-dsl==8.11.0
+elasticsearch-dsl==8.13.1
     # via -r requirements/base.in
-environs==10.0.0
+environs==11.0.0
     # via -r requirements/base.in
-exceptiongroup==1.2.0
+exceptiongroup==1.2.1
     # via pytest
-faker==22.0.0
+faker==25.0.0
     # via -r requirements/dev.in
-filelock==3.13.1
+filelock==3.14.0
     # via virtualenv
 flake8==7.0.0
     # via -r requirements/dev.in
-freezegun==1.4.0
+freezegun==1.5.0
     # via -r requirements/dev.in
 greenlet==3.0.3
     # via sqlalchemy
-identify==2.5.33
+identify==2.5.36
     # via pre-commit
-idna==3.6
+idna==3.7
     # via requests
 iniconfig==2.0.0
     # via pytest
@@ -67,7 +67,7 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-marshmallow==3.20.1
+marshmallow==3.21.1
     # via environs
 mccabe==0.7.0
     # via flake8
@@ -79,20 +79,20 @@ nodeenv==1.8.0
     # via pre-commit
 opensearch-dsl==2.1.0
     # via -r requirements/base.in
-opensearch-py==2.4.2
+opensearch-py==2.5.0
     # via opensearch-dsl
-packaging==23.2
+packaging==24.0
     # via
     #   black
     #   marshmallow
     #   pytest
 pathspec==0.12.1
     # via black
-platformdirs==4.1.0
+platformdirs==4.2.1
     # via
     #   black
     #   virtualenv
-pluggy==1.3.0
+pluggy==1.5.0
     # via pytest
 pre-commit==3.5.0
     # via -r requirements/dev.in
@@ -102,16 +102,16 @@ pycodestyle==2.11.1
     # via flake8
 pyflakes==3.2.0
     # via flake8
-pytest==7.4.4
+pytest==8.2.0
     # via
     #   -r requirements/dev.in
     #   pytest-cov
     #   pytest-mock
-pytest-cov==4.1.0
+pytest-cov==5.0.0
     # via -r requirements/dev.in
-pytest-mock==3.12.0
+pytest-mock==3.14.0
     # via -r requirements/dev.in
-python-dateutil==2.8.2
+python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   elasticsearch-dsl
@@ -119,13 +119,13 @@ python-dateutil==2.8.2
     #   freezegun
     #   opensearch-dsl
     #   opensearch-py
-python-dotenv==1.0.0
+python-dotenv==1.0.1
     # via
     #   -r requirements/base.in
     #   environs
 pyyaml==6.0.1
     # via pre-commit
-redis==5.0.1
+redis==5.0.4
     # via -r requirements/base.in
 requests==2.31.0
     # via
@@ -133,7 +133,7 @@ requests==2.31.0
     #   requests-aws4auth
 requests-aws4auth==1.2.3
     # via -r requirements/base.in
-s3transfer==0.10.0
+s3transfer==0.10.1
     # via boto3
 six==1.16.0
     # via
@@ -141,19 +141,18 @@ six==1.16.0
     #   opensearch-py
     #   python-dateutil
     #   requests-aws4auth
-sqlalchemy==2.0.25
+sqlalchemy==2.0.29
     # via -r requirements/base.in
-sqlparse==0.4.4
+sqlparse==0.5.0
     # via -r requirements/base.in
 tomli==2.0.1
     # via
     #   black
     #   coverage
     #   pytest
-typing-extensions==4.9.0
+typing-extensions==4.11.0
     # via
     #   black
-    #   faker
     #   sqlalchemy
 urllib3==1.26.18
     # via
@@ -161,7 +160,7 @@ urllib3==1.26.18
     #   elastic-transport
     #   opensearch-py
     #   requests
-virtualenv==20.25.0
+virtualenv==20.26.1
     # via pre-commit
 
 # The following packages are considered to be unsafe in a requirements file:

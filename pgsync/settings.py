@@ -4,6 +4,7 @@ This module contains the settings for PGSync.
 It reads environment variables from a .env file and sets default values for each variable.
 The variables are used to configure various parameters such as block size, checkpoint path, polling interval, etc.
 """
+
 import logging
 import logging.config
 import os
@@ -176,7 +177,9 @@ REDIS_SCHEME = env.str("REDIS_SCHEME", default="redis")
 REDIS_SOCKET_TIMEOUT = env.int("REDIS_SOCKET_TIMEOUT", default=5)
 # number of items to write to Redis at a time
 REDIS_WRITE_CHUNK_SIZE = env.int("REDIS_WRITE_CHUNK_SIZE", default=500)
-
+# Kafka:
+KAFKA_BOOTSTRAP_SERVERS = env.str("KAFKA_BOOTSTRAP_SERVERS", default=None)
+KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
 
 # Logging:
 def _get_logging_config(silent_loggers: t.Optional[str] = None):

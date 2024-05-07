@@ -53,7 +53,7 @@ SCRIPTS = [
     "bin/bootstrap",
     "bin/parallel_sync",
 ]
-SETUP_REQUIRES = ["pytest-runner"]
+SETUP_REQUIRES = ["pytest-runner","wheel"]
 TESTS_REQUIRE = ["pytest"]
 
 # if building the source dist then add the sources
