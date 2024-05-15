@@ -1074,7 +1074,7 @@ class Sync(Base, metaclass=Singleton):
 
                 if self.kafka_producer:
                     doc_id = doc["_id"]
-                    transaction_id = txmin or txmax
+                    transaction_id = txmin or txmax or self.checkpoint
                     doc["_transaction_id"] = transaction_id
                     self.kafka_producer.send(settings.KAFKA_TOPIC_NAME, key=doc_id, value=doc)
 
