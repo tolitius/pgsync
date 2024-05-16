@@ -12,4 +12,4 @@ RUN apt update \
 
 WORKDIR /code
 
-RUN pip install -e git+https://github.com/tolitius/pgsync.git@main#egg=pgsync
+RUN pip install --no-cache-dir -e git+https://github.com/tolitius/pgsync.git@main#egg=pgsync

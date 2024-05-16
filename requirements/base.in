@@ -12,6 +12,6 @@ redis
 requests-aws4auth
 sqlalchemy
 sqlparse
-sentence_transformers
-openai
+# sentence_transformers
+# openai
 kafka-python
