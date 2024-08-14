@@ -14,4 +14,4 @@ sqlalchemy
 sqlparse
 # sentence_transformers
 # openai
-kafka-python
+kafka-python-ng
