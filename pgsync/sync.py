@@ -111,6 +111,10 @@ class Sync(Base, metaclass=Singleton):
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
+
+        self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
+        logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
+
         if settings.KAFKA_BOOTSTRAP_SERVERS:
             self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, key_serializer=str.encode, value_serializer=lambda v: json.dumps(v).encode('utf-8'))
             logger.debug(f"kafka_producer is enabled to publish transformed docs to topic {settings.KAFKA_TOPIC_NAME}")
@@ -429,6 +433,7 @@ class Sync(Base, metaclass=Singleton):
             txmax=txmax,
             upto_nchanges=upto_nchanges,
         )
+
         while True:
             changes: int = self.logical_slot_peek_changes(
                 self.__name,
@@ -457,6 +462,12 @@ class Sync(Base, metaclass=Singleton):
                 try:
                     payload: Payload = self.parse_logical_slot(row.data)
                     logger.debug(f"logical_slot_changes: parsed payload {payload}")
+
+                    # check if the schema and table are in our valid set
+                    if (payload.schema, payload.table) not in self.valid_tables:
+                        logger.debug(f"skipping event for {payload.schema}.{payload.table} as it's not in the configured pgsync JSON schema")
+                        continue  # skip to the next iteration: i.e. the next row in this loop
+
                 except Exception as e:
                     logger.exception(
                         f"Error parsing row: {e}\nRow data: {row.data}"

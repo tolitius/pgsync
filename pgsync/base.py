@@ -812,15 +812,20 @@ class Base(object):
 
         match = LOGICAL_SLOT_PREFIX.search(row)
         if not match:
-            raise LogicalSlotParseError(f"No match for row: {row}")
+            # raise LogicalSlotParseError(f"No match for row: {row}")
+            logger.warning(f"can't parse replication slot for row: {row}")
+            data = {'old': None, 'new': None, 'schema': None, 'table': None, 'tg_op': 'TRUNCATE'}
+            suffix: str = ' none '
 
-        data = {"old": None, "new": None}
-        data.update(**match.groupdict())
+        else:
+            data = {"old": None, "new": None}
+            data.update(**match.groupdict())
+
+            span = match.span()
+            # including trailing space below is deliberate
+            suffix: str = f"{row[span[1]:]} "
+
         payload: Payload = Payload(**data)
-
-        span = match.span()
-        # including trailing space below is deliberate
-        suffix: str = f"{row[span[1]:]} "
 
         if "old-key" and "new-tuple" in suffix:
             # this can only be an UPDATE operation
