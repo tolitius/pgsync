@@ -58,7 +58,7 @@ from .utils import (
     threaded,
     Timer,
 )
-from kafka import KafkaProducer
+from confluent_kafka import Producer
 
 logger = logging.getLogger(__name__)
 
@@ -116,11 +116,14 @@ class Sync(Base, metaclass=Singleton):
         logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
 
         if settings.KAFKA_BOOTSTRAP_SERVERS:
-            self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-                                                key_serializer=str.encode,
-                                                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                                                max_block_ms=settings.KAFKA_MAX_BLOCK_MS )
-            logger.debug(f"kafka_producer is enabled to publish transformed docs to topic {settings.KAFKA_TOPIC_NAME}")
+
+            config = {
+                'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
+                'acks':              'all'
+            }
+
+            self.kafka_producer = Producer(config)
+            logger.debug(f"kafka producer is up. will publish transformed docs to {settings.KAFKA_TOPIC_NAME} topic")
         else:
             self.kafka_producer = None
 
@@ -1093,7 +1096,11 @@ class Sync(Base, metaclass=Singleton):
                     doc_id = doc["_id"]
                     transaction_id = txmin or txmax or self._checkpoint
                     doc["_transaction_id"] = transaction_id
-                    self.kafka_producer.send(settings.KAFKA_TOPIC_NAME, key=doc_id, value=doc)
+                    self.kafka_producer.produce(topic=settings.KAFKA_TOPIC_NAME,
+                                                key=str.encode(doc_id),
+                                                value=json.dumps(doc).encode('utf-8'))
+
+                    # logger.info(f"KAFKA: published {str.encode(doc_id)} => {json.dumps(doc).encode('utf-8')}")
 
                 yield doc
 
