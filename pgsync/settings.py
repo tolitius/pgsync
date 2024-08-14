@@ -180,6 +180,7 @@ REDIS_WRITE_CHUNK_SIZE = env.int("REDIS_WRITE_CHUNK_SIZE", default=500)
 # Kafka:
 KAFKA_BOOTSTRAP_SERVERS = env.str("KAFKA_BOOTSTRAP_SERVERS", default=None)
 KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
+KAFKA_MAX_BLOCK_MS = env.int("KAFKA_MAX_BLOCK_MS", default=60000)
 
 # Logging:
 def _get_logging_config(silent_loggers: t.Optional[str] = None):

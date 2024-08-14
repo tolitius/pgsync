@@ -116,7 +116,10 @@ class Sync(Base, metaclass=Singleton):
         logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
 
         if settings.KAFKA_BOOTSTRAP_SERVERS:
-            self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS, key_serializer=str.encode, value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+            self.kafka_producer = KafkaProducer(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                                                key_serializer=str.encode,
+                                                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                                                max_block_ms=settings.KAFKA_MAX_BLOCK_MS )
             logger.debug(f"kafka_producer is enabled to publish transformed docs to topic {settings.KAFKA_TOPIC_NAME}")
         else:
             self.kafka_producer = None
@@ -356,7 +359,7 @@ class Sync(Base, metaclass=Singleton):
         return f"{PRIMARY_KEY_DELIMITER}".join(map(str, primary_keys))
 
     @exception
-    def is_event_not_valid(self, event: dict) -> bool:
+    def should_skip_event(self, event: dict) -> bool:
         """
         expects an event payload from postgres notification queue
         that has two keys: 'new' and 'old':
@@ -470,8 +473,7 @@ class Sync(Base, metaclass=Singleton):
                     )
                     raise
 
-                # if not self.is_event_not_valid({'new': payload.new}):
-                if not self.is_event_not_valid(payload.json()):
+                if not self.should_skip_event(payload.to_slot()):
                     payloads.append(payload)
 
                     j: int = i + 1
@@ -1195,7 +1197,7 @@ class Sync(Base, metaclass=Singleton):
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
                     # make sure none of the ids (primary | foreign keys) are missing
-                    if not self.is_event_not_valid(payload):
+                    if not self.should_skip_event(payload):
                         if self.index in payload["indices"]:
                             payloads.append(payload)
                             logger.debug(f"added to payloads from database: {payload}")
@@ -1221,7 +1223,7 @@ class Sync(Base, metaclass=Singleton):
             if notification.channel == self.database:
                 payload = json.loads(notification.payload)
                 if self.index in payload["indices"]:
-                    if not self.is_event_not_valid(payload):
+                    if not self.should_skip_event(payload):
                         self.redis.push([payload])
                         logger.debug(f"pushed_to_redis: {payload}")
                         self.count["db"] += 1
