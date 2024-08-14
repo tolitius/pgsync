@@ -206,6 +206,7 @@ PRIMARY_KEY_DELIMITER = "|"
 # Replication slot patterns
 LOGICAL_SLOT_PREFIX = re.compile(
     r"table\s\"?(?P<schema>[\w-]+)\"?.\"?(?P<table>[\w-]+)\"?:\s(?P<tg_op>[A-Z]+):"  # noqa E501
+    # r"table(?:s)?\s(?P<tables>(?:[\w-]+\.[\w-]+\s*(?:,\s*)?)+):\s(?P<tg_op>[A-Z]+):" # support multiple tables
 )
 LOGICAL_SLOT_SUFFIX = re.compile(
     '\s(?P<key>"?\w+"?)\[(?P<type>[\w\s]+)\]:(?P<value>[\w\'"\-]+)'

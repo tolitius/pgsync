@@ -439,6 +439,7 @@ class Sync(Base, metaclass=Singleton):
             txmax=txmax,
             upto_nchanges=upto_nchanges,
         )
+
         while True:
             changes: int = self.logical_slot_peek_changes(
                 self.__name,
@@ -467,6 +468,12 @@ class Sync(Base, metaclass=Singleton):
                 try:
                     payload: Payload = self.parse_logical_slot(row.data)
                     logger.debug(f"logical_slot_changes: parsed payload {payload}")
+
+                    # check if the schema and table are in our valid set
+                    if (payload.schema, payload.table) not in self.valid_tables:
+                        logger.debug(f"skipping event for {payload.schema}.{payload.table} as it's not in the configured pgsync JSON schema")
+                        continue  # skip to the next iteration: i.e. the next row in this loop
+
                 except Exception as e:
                     logger.exception(
                         f"Error parsing row: {e}\nRow data: {row.data}"
