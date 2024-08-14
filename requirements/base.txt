@@ -39,7 +39,7 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-kafka-python==2.0.2
+kafka-python-ng==2.2.2
     # via -r requirements/base.in
 marshmallow==3.21.1
     # via environs
