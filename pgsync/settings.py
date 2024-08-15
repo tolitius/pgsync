@@ -185,6 +185,7 @@ REDIS_WRITE_CHUNK_SIZE = env.int("REDIS_WRITE_CHUNK_SIZE", default=500)
 KAFKA_BOOTSTRAP_SERVERS = env.str("KAFKA_BOOTSTRAP_SERVERS", default=None)
 KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
 KAFKA_MAX_BLOCK_MS = env.int("KAFKA_MAX_BLOCK_MS", default=60000)
+KAFKA_MESSAGE_MAX_BYTES = env.int("KAFKA_MESSAGE_MAX_BYTES", default=10485760) # 10MB
 
 # Logging:
 def _get_logging_config(silent_loggers: t.Optional[str] = None):

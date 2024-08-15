@@ -119,8 +119,8 @@ class Sync(Base, metaclass=Singleton):
 
             config = {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
-                'message.max.bytes': 2097152,                           # 2MB to avoid "MSG_SIZE_TOO_LARGE"
-                'acks':              'all'
+                'message.max.bytes': settings.KAFKA_MESSAGE_MAX_BYTES,
+                # 'acks':              'all'
             }
 
             self.kafka_producer = Producer(config)
@@ -383,6 +383,12 @@ class Sync(Base, metaclass=Singleton):
             except BufferError as berr:
                 logger.warning(f"kafka producer queue is full {berr}, waiting for 1s")
                 self.kafka_producer.poll(timeout=1.0)
+
+            except:
+                ## two logs in case a document is too large to be logged: to detect the problem
+                logger.error(f"kafka producer could not publish the document id {doc_id} to {settings.KAFKA_TOPIC_NAME} topic")
+                logger.error(f"document was not published: {doc} to {settings.KAFKA_TOPIC_NAME}")
+                raise
 
     @exception
     def should_skip_event(self, event: dict) -> bool:
