@@ -372,11 +372,16 @@ class Sync(Base, metaclass=Singleton):
         transaction_id = txmin or txmax or self._checkpoint
         doc["_transaction_id"] = transaction_id
 
+        jdoc = json.dumps(doc).encode('utf-8')
+        doc_size = sys.getsizeof(jdoc)
+        if doc_size > 1024 * 1024:
+            logger.warning(f"document: {{\"id\": \"{doc_id}\", \"tx_id\": {transaction_id},\"size\": {doc_size} bytes\"}} is larger than 1MB")
+
         while True:
             try:
                 self.kafka_producer.produce(topic=settings.KAFKA_TOPIC_NAME,
                                             key=str.encode(doc_id),
-                                            value=json.dumps(doc).encode('utf-8'))
+                                            value=jdoc)
                 self.kafka_producer.poll(timeout=0.0)
                 break
 
