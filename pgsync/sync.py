@@ -119,6 +119,7 @@ class Sync(Base, metaclass=Singleton):
 
             config = {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
+                'message.max.bytes': 2097152,                           # 2MB to avoid "MSG_SIZE_TOO_LARGE"
                 'acks':              'all'
             }
 

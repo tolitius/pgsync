@@ -1,6 +1,7 @@
 """PGSync SearchClient helper."""
 
 import logging
+import time
 import typing as t
 from collections import defaultdict
 
@@ -11,6 +12,7 @@ import elasticsearch_dsl
 import opensearch_dsl
 import opensearchpy
 from requests_aws4auth import AWS4Auth
+from opensearchpy.helpers.errors import ScanError
 
 from . import settings
 from .constants import (
@@ -77,6 +79,9 @@ class SearchClient(object):
             self.Q: t.Callable = opensearch_dsl.Q
         else:
             raise RuntimeError("Unknown search client")
+
+        self.scan_max_retries = settings.ELASTICSEARCH_SCAN_MAX_RETRIES or 5
+        self.scan_retry_delay = settings.ELASTICSEARCH_SCAN_RETRY_DELAY_SECONDS or 3
 
         self.doc_count: int = 0
 
@@ -239,15 +244,28 @@ class SearchClient(object):
                     ]
                 )
             )
-        try:
-            logger.debug(f"_scanning search: {search.to_dict()}")
-            for hit in search.scan():
-                logger.debug(f"_scan hit {hit.meta.id}")
-                yield hit.meta.id
-        except elasticsearch.exceptions.RequestError as e:
-            logger.warning(f"RequestError: {e}")
-            if "is out of range for a long" not in str(e):
-                raise
+
+        retries = 0
+        while retries < self.scan_max_retries:
+            try:
+                logger.debug(f"_scanning search: {search.to_dict()}")
+                for hit in search.scan():
+                    logger.debug(f"_scan hit {hit.meta.id}")
+                    yield hit.meta.id
+                return  # if we complete the scan without error, exit the function
+            except ScanError as e:
+                logger.warning(f"could not scan for document ids: {e}")
+                retries += 1
+                if retries < self.scan_max_retries:
+                    logger.info(f"retrying in {self.scan_retry_delay} seconds... (attempt: {retries + 1}/{self.scan_max_retries})")
+                    time.sleep(self.scan_retry_delay)
+                else:
+                    logger.error(f"max scan retries reached. raising the last encountered error")
+                    raise
+            except elasticsearch.exceptions.RequestError as e:
+                logger.warning(f"RequestError: {e}")
+                if "is out of range for a long" not in str(e):
+                    raise
 
     def search(self, index: str, body: dict) -> t.Any:
         """
