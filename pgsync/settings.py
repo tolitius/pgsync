@@ -232,6 +232,7 @@ LOGGING = _get_logging_config(
         "urllib3.util.retry",
         "elasticsearch",
         "opensearch",
+        # "confluent_kafka",
         "kafka",
         "elastic_transport.transport",
     ]

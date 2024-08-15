@@ -361,6 +361,28 @@ class Sync(Base, metaclass=Singleton):
             )
         return f"{PRIMARY_KEY_DELIMITER}".join(map(str, primary_keys))
 
+    def publish_to_kafka(self,
+                         doc: dict,
+                         txmin: t.Optional[int] = None,
+                         txmax: t.Optional[int] = None,
+                         ) -> None:
+
+        doc_id = doc["_id"]
+        transaction_id = txmin or txmax or self._checkpoint
+        doc["_transaction_id"] = transaction_id
+
+        while True:
+            try:
+                self.kafka_producer.produce(topic=settings.KAFKA_TOPIC_NAME,
+                                            key=str.encode(doc_id),
+                                            value=json.dumps(doc).encode('utf-8'))
+                self.kafka_producer.poll(timeout=0.0)
+                break
+
+            except BufferError as berr:
+                logger.warning(f"kafka producer queue is full {berr}, waiting for 1s")
+                self.kafka_producer.poll(timeout=1.0)
+
     @exception
     def should_skip_event(self, event: dict) -> bool:
         """
@@ -1093,14 +1115,7 @@ class Sync(Base, metaclass=Singleton):
                     doc["pipeline"] = self.pipeline
 
                 if self.kafka_producer:
-                    doc_id = doc["_id"]
-                    transaction_id = txmin or txmax or self._checkpoint
-                    doc["_transaction_id"] = transaction_id
-                    self.kafka_producer.produce(topic=settings.KAFKA_TOPIC_NAME,
-                                                key=str.encode(doc_id),
-                                                value=json.dumps(doc).encode('utf-8'))
-
-                    # logger.info(f"KAFKA: published {str.encode(doc_id)} => {json.dumps(doc).encode('utf-8')}")
+                    self.publish_to_kafka(doc, txmin, txmax)
 
                 yield doc
 
