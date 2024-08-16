@@ -372,6 +372,11 @@ class Sync(Base, metaclass=Singleton):
 
         jdoc = json.dumps(doc).encode('utf-8')
         doc_size = sys.getsizeof(jdoc)
+
+        if doc_size > settings.KAFKA_MESSAGE_MAX_BYTES:
+            logger.error(f"could not publish a document: {{\"id\": \"{doc_id}\", \"tx_id\": {transaction_id},\"size\": {doc_size} bytes\"}} is larger than the kafka message max bytes {settings.KAFKA_MESSAGE_MAX_BYTES}")
+            return
+
         if doc_size > 1024 * 1024:
             logger.warning(f"document: {{\"id\": \"{doc_id}\", \"tx_id\": {transaction_id},\"size\": {doc_size} bytes\"}} is larger than 1MB")
 
