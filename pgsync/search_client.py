@@ -361,6 +361,9 @@ class SearchClient(object):
         if routing:
             tree.root._mapping["_routing"] = {"required": True}
 
+        if settings.ENABLE_DOC_SIZE:
+            tree.root._mapping["_size"] = {"enabled": True}
+
         if tree.root._mapping:
             if self.major_version < 7 and not self.is_opensearch:
                 tree.root._mapping = {"_doc": tree.root._mapping}
