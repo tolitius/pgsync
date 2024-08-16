@@ -182,6 +182,7 @@ REDIS_SOCKET_TIMEOUT = env.int("REDIS_SOCKET_TIMEOUT", default=5)
 # number of items to write to Redis at a time
 REDIS_WRITE_CHUNK_SIZE = env.int("REDIS_WRITE_CHUNK_SIZE", default=500)
 # Kafka:
+KAFKA_ENABLED=env.bool("KAFKA_ENABLED", default=False)
 KAFKA_BOOTSTRAP_SERVERS = env.str("KAFKA_BOOTSTRAP_SERVERS", default=None)
 KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
 KAFKA_MAX_BLOCK_MS = env.int("KAFKA_MAX_BLOCK_MS", default=60000)

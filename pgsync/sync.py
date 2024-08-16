@@ -115,7 +115,7 @@ class Sync(Base, metaclass=Singleton):
         self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
         logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
 
-        if settings.KAFKA_BOOTSTRAP_SERVERS:
+        if settings.KAFKA_ENABLED:
 
             config = {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
@@ -125,8 +125,6 @@ class Sync(Base, metaclass=Singleton):
 
             self.kafka_producer = Producer(config)
             logger.debug(f"kafka producer is up. will publish transformed docs to {settings.KAFKA_TOPIC_NAME} topic")
-        else:
-            self.kafka_producer = None
 
     def validate(self, repl_slots: bool = True) -> None:
         """Perform all validation right away."""
@@ -1126,7 +1124,7 @@ class Sync(Base, metaclass=Singleton):
                 if self.pipeline:
                     doc["pipeline"] = self.pipeline
 
-                if self.kafka_producer:
+                if settings.KAFKA_ENABLED:
                     self.publish_to_kafka(doc, txmin, txmax)
 
                 yield doc
