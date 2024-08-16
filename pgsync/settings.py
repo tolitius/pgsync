@@ -189,6 +189,8 @@ KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
 KAFKA_MAX_BLOCK_MS = env.int("KAFKA_MAX_BLOCK_MS", default=60000)
 KAFKA_MESSAGE_MAX_BYTES = env.int("KAFKA_MESSAGE_MAX_BYTES", default=10485760) # 10MB
 
+BIFROST_ENABLED = env.bool("BIFROST_ENABLED", default=False)
+
 # Logging:
 def _get_logging_config(silent_loggers: t.Optional[str] = None):
     """Return the logging configuration based on environment variables."""

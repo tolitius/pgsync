@@ -30,8 +30,9 @@ from .settings import (
     PG_SSLROOTCERT,
     QUERY_CHUNK_SIZE,
     STREAM_RESULTS,
+    BIFROST_ENABLED,
 )
-from .trigger import CREATE_TRIGGER_TEMPLATE
+from .trigger import CREATE_TRIGGER_TEMPLATE, CREATE_BIFROST_TRIGGER_TEMPLATE
 from .urls import get_postgres_url
 from .utils import compiled_query
 from .view import create_view, DropView, is_view, RefreshView
@@ -205,6 +206,11 @@ class Base(object):
         self.__columns: dict = {}
         self.verbose: bool = verbose
         self._conn = None
+
+        if BIFROST_ENABLED:
+            self.create_trigger_template = CREATE_BIFROST_TRIGGER_TEMPLATE
+        else:
+            self.create_trigger_template = CREATE_TRIGGER_TEMPLATE
 
     def connect(self) -> None:
         """Connect to database."""
@@ -707,7 +713,7 @@ class Base(object):
     def create_function(self, schema: str) -> None:
         self.execute(
             sa.text(
-                CREATE_TRIGGER_TEMPLATE.replace(
+                self.create_trigger_template.replace(
                     MATERIALIZED_VIEW,
                     f"{schema}.{MATERIALIZED_VIEW}",
                 ).replace(
