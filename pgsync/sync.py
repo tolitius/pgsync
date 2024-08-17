@@ -75,6 +75,7 @@ class Sync(Base, metaclass=Singleton):
         num_workers: int = 1,
         producer: bool = True,
         consumer: bool = True,
+        snapshot: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -97,25 +98,28 @@ class Sync(Base, metaclass=Singleton):
         self._truncate: bool = False
         self.producer = producer
         self.consumer = consumer
+        self._snapshot = snapshot
         self.num_workers: int = num_workers
         self._checkpoint_file: str = os.path.join(
             settings.CHECKPOINT_PATH, f".{self.__name}"
         )
-        self.redis: RedisQueue = RedisQueue(self.__name)
         self.tree: Tree = Tree(self.models, nodes=self.nodes)
-        if validate:
-            self.validate(repl_slots=repl_slots)
-            self.create_setting()
+        if not self._snapshot:
+            self.redis: RedisQueue = RedisQueue(self.__name)
+            if validate:
+                self.validate(repl_slots=repl_slots)
+        self.create_setting()
         if self.plugins:
             logger.debug(f"plugins available for transformations are {self.plugins}")
             self._plugins: Plugins = Plugins("plugins", self.plugins)
-        self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
+#         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
+        self.query_builder: QueryBuilder = QueryBuilder(verbose=True)
         self.count: dict = dict(xlog=0, db=0, redis=0)
+        if not self._snapshot:
+            self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
+            logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
 
-        self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
-        logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
-
-        if settings.KAFKA_ENABLED:
+        if settings.KAFKA_ENABLED and not self._snapshot:
 
             config = {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
@@ -155,7 +159,8 @@ class Sync(Base, metaclass=Singleton):
                 "Enable logical decoding by setting wal_level = logical"
             )
 
-        self._can_create_replication_slot("_tmp_")
+        if settings.CAN_CREATE_REPLICATION_SLOT:
+            self._can_create_replication_slot("_tmp_")
 
         rds_logical_replication: t.Optional[str] = self.pg_settings(
             "rds.logical_replication"
@@ -1357,10 +1362,12 @@ class Sync(Base, metaclass=Singleton):
             self.index, self.sync(txmin=txmin, txmax=txmax)
         )
         logger.debug(f"pulled initial set of events from the database")
-        # now sync up to txmax to capture everything we may have missed
-        self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
-        self.checkpoint: int = txmax or self.txid_current
-        self._truncate = True
+        if not self._snapshot:
+            # now sync up to txmax to capture everything we may have missed
+            self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
+            self.checkpoint: int = txmax or self.txid_current
+            self._truncate = True
+
 
     @threaded
     @exception
@@ -1487,6 +1494,13 @@ class Sync(Base, metaclass=Singleton):
     cls=MutuallyExclusiveOption,
     mutually_exclusive=["daemon"],
 )
+@click.option(
+    "--snapshot",
+    is_flag=True,
+    help="Snapshot mode (Incompatible with -d)",
+    cls=MutuallyExclusiveOption,
+    mutually_exclusive=["daemon"],
+)
 @click.option("--host", "-h", help="PG_HOST override")
 @click.option("--password", is_flag=True, help="Prompt for database password")
 @click.option("--port", "-p", help="PG_PORT override", type=int)
@@ -1554,6 +1568,7 @@ def main(
     analyze,
     num_workers,
     polling,
+    snapshot,
     producer,
     consumer,
 ):
@@ -1602,6 +1617,11 @@ def main(
                     sync: Sync = Sync(doc, verbose=verbose, **kwargs)
                     sync.pull()
                 time.sleep(settings.POLL_INTERVAL)
+
+        elif snapshot:
+            for doc in config_loader(config):
+                sync: Sync = Sync(doc, verbose=verbose, snapshot=True, **kwargs)
+                sync.pull()
 
         else:
             for doc in config_loader(config):
