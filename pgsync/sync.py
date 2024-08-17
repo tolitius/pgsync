@@ -117,7 +117,10 @@ class Sync(Base, metaclass=Singleton):
         self.count: dict = dict(xlog=0, db=0, redis=0)
         if not self._snapshot:
             self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
+            self.valid_schemas = {schema for schema, _ in self.valid_tables}
+
             logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
+            logger.info(f"valid schemas as per pgsync schema: {self.valid_schemas}")
 
         if settings.KAFKA_ENABLED and not self._snapshot:
 
@@ -286,7 +289,7 @@ class Sync(Base, metaclass=Singleton):
         join_queries: bool = settings.JOIN_QUERIES
         self.teardown(drop_view=False)
 
-        for schema in self.schemas:
+        for schema in self.valid_schemas:
             self.create_function(schema)
             tables: t.Set = set()
             # tables with user defined foreign keys
