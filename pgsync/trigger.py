@@ -104,7 +104,7 @@ BEGIN
             'SUCCESS',
             recorded_at);
 
-    EXCEPTION WHEN OTHERS then -- handles all there error exceptions
+    EXCEPTION WHEN OTHERS then -- handles all there error exceptions and protects the main transaction from rollback
 
         error_details = JSON_BUILD_OBJECT
                         ('errorCode', sqlstate,
@@ -157,63 +157,68 @@ DECLARE
   _foreign_keys TEXT [];
 
 BEGIN
-    -- database is also the channel name.
-    channel := CURRENT_DATABASE();
+    BEGIN
+        -- database is also the channel name.
+        channel := CURRENT_DATABASE();
 
-    IF TG_OP = 'DELETE' THEN
+        IF TG_OP = 'DELETE' THEN
 
-        SELECT primary_keys, indices
-        INTO _primary_keys, _indices
-        FROM {MATERIALIZED_VIEW}
-        WHERE table_name = TG_TABLE_NAME;
-
-        old_row = ROW_TO_JSON(OLD);
-        old_row := (
-            SELECT JSONB_OBJECT_AGG(key, value)
-            FROM JSON_EACH(old_row)
-            WHERE key = ANY(_primary_keys)
-        );
-        xmin := OLD.xmin;
-    ELSE
-        IF TG_OP <> 'TRUNCATE' THEN
-
-            SELECT primary_keys, foreign_keys, indices
-            INTO _primary_keys, _foreign_keys, _indices
+            SELECT primary_keys, indices
+            INTO _primary_keys, _indices
             FROM {MATERIALIZED_VIEW}
             WHERE table_name = TG_TABLE_NAME;
 
-            new_row = ROW_TO_JSON(NEW);
-            new_row := (
+            old_row = ROW_TO_JSON(OLD);
+            old_row := (
                 SELECT JSONB_OBJECT_AGG(key, value)
-                FROM JSON_EACH(new_row)
-                WHERE key = ANY(_primary_keys || _foreign_keys)
+                FROM JSON_EACH(old_row)
+                WHERE key = ANY(_primary_keys)
             );
-            IF TG_OP = 'UPDATE' THEN
-                old_row = ROW_TO_JSON(OLD);
-                old_row := (
+            xmin := OLD.xmin;
+        ELSE
+            IF TG_OP <> 'TRUNCATE' THEN
+
+                SELECT primary_keys, foreign_keys, indices
+                INTO _primary_keys, _foreign_keys, _indices
+                FROM {MATERIALIZED_VIEW}
+                WHERE table_name = TG_TABLE_NAME;
+
+                new_row = ROW_TO_JSON(NEW);
+                new_row := (
                     SELECT JSONB_OBJECT_AGG(key, value)
-                    FROM JSON_EACH(old_row)
+                    FROM JSON_EACH(new_row)
                     WHERE key = ANY(_primary_keys || _foreign_keys)
                 );
+                IF TG_OP = 'UPDATE' THEN
+                    old_row = ROW_TO_JSON(OLD);
+                    old_row := (
+                        SELECT JSONB_OBJECT_AGG(key, value)
+                        FROM JSON_EACH(old_row)
+                        WHERE key = ANY(_primary_keys || _foreign_keys)
+                    );
+                END IF;
+                xmin := NEW.xmin;
             END IF;
-            xmin := NEW.xmin;
         END IF;
-    END IF;
 
-    -- construct the notification as a JSON object.
-    notification = JSON_BUILD_OBJECT(
-        'xmin', xmin,
-        'new', new_row,
-        'old', old_row,
-        'indices', _indices,
-        'tg_op', TG_OP,
-        'table', TG_TABLE_NAME,
-        'schema', TG_TABLE_SCHEMA
-    );
+        -- construct the notification as a JSON object.
+        notification = JSON_BUILD_OBJECT(
+            'xmin', xmin,
+            'new', new_row,
+            'old', old_row,
+            'indices', _indices,
+            'tg_op', TG_OP,
+            'table', TG_TABLE_NAME,
+            'schema', TG_TABLE_SCHEMA
+        );
 
-    -- Notify/Listen updates occur asynchronously,
-    -- so this doesn't block the Postgres trigger procedure.
-    PERFORM PG_NOTIFY(channel, notification::TEXT);
+        -- Notify/Listen updates occur asynchronously,
+        -- so this doesn't block the Postgres trigger procedure.
+        PERFORM PG_NOTIFY(channel, notification::TEXT);
+
+    EXCEPTION WHEN OTHERS THEN -- handles all there error exceptions and protects the main transaction from rollback
+        RAISE LOG 'ERROR : error occured while processing notification % at %', sqlstate || ': ' || sqlerrm, now();
+    END;
 
   RETURN NEW;
 END;
