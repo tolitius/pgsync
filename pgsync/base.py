@@ -711,6 +711,9 @@ class Base(object):
                 self.execute(sa.text(query))
 
     def create_function(self, schema: str) -> None:
+
+        logger.info(f"create a database function {schema}.{TRIGGER_FUNC}()")
+
         self.execute(
             sa.text(
                 self.create_trigger_template.replace(
