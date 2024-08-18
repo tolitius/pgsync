@@ -1137,7 +1137,7 @@ class Sync(Base, metaclass=Singleton):
                 if self.pipeline:
                     doc["pipeline"] = self.pipeline
 
-                if settings.KAFKA_ENABLED:
+                if settings.KAFKA_ENABLED and not self._snapshot:
                     self.publish_to_kafka(doc, txmin, txmax)
 
                 yield doc
