@@ -434,12 +434,14 @@ class Sync(Base, metaclass=Singleton):
 
         if (event['schema'], event['table']) in self._gist_schema_attributes:
             if CHANGED_FIELD_NAME in event and event[CHANGED_FIELD_NAME] is not None:
+                skip_status = True
                 for column in event[CHANGED_FIELD_NAME]:
                     if column in self._gist_schema_attributes[(event['schema'], event['table'])]:
-                        return False
-                    else:
-                        logger.debug(f"should_skip_event: skip event as [ {column} ] was modifyed that not configured pgsync JSON schema for {event['schema']}.{event['table']} {self._gist_schema_attributes[(event['schema'], event['table'])]}")
-                        return True
+                        skip_status = False
+                        break
+                if skip_status:
+                    logger.debug(f"should_skip_event: skip event as [ {event[CHANGED_FIELD_NAME]} ] was modifyed that not configured pgsync JSON schema for {event['schema']}.{event['table']} {self._gist_schema_attributes[(event['schema'], event['table'])]}")
+                    return True
         else:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
