@@ -189,6 +189,8 @@ PLUGIN = "test_decoding"
 # Trigger function
 TRIGGER_FUNC = "table_notify"
 
+CHANGED_FIELD_NAME = "changed_fields"
+
 # Views
 # added underscore to reduce chance of collisions
 MATERIALIZED_VIEW = "_view"
@@ -209,5 +211,5 @@ LOGICAL_SLOT_PREFIX = re.compile(
     # r"table(?:s)?\s(?P<tables>(?:[\w-]+\.[\w-]+\s*(?:,\s*)?)+):\s(?P<tg_op>[A-Z]+):" # support multiple tables
 )
 LOGICAL_SLOT_SUFFIX = re.compile(
-    '\s(?P<key>"?\w+"?)\[(?P<type>[\w\s]+)\]:(?P<value>[\w\'"\-]+)'
+    r"\s(?P<key>\"?\w+\"?)\[(?P<type>[\w\s]+)\]:(?P<value>[\w\'\"\-]+)"
 )
