@@ -30,7 +30,7 @@ from .constants import (
     TG_OP,
     TRUNCATE,
     UPDATE,
-    CHANGED_FIELD_NAME,
+    CHANGED_FIELDS,
 )
 from .exc import (
     ForeignKeyError,
@@ -113,16 +113,16 @@ class Sync(Base, metaclass=Singleton):
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
 
-        self._gist_schema_attributes: t.Dict[set] = {}
+        self._schema_fields: t.Dict[set] = {}
         for node in self.tree.traverse_post_order():
             key: t.Tuple[str, str] = (node.schema, node.table)
             column_names = {str(column) for column in node.columns if isinstance(column, str)}
-            if key in self._gist_schema_attributes:
-                self._gist_schema_attributes[key].union(column_names)
+            if key in self._schema_fields:
+                self._schema_fields[key].union(column_names)
             else:
-                self._gist_schema_attributes[key] = column_names
+                self._schema_fields[key] = column_names
 
-        logger.info(f"gist pgsync schema attributes: {self._gist_schema_attributes}")
+        logger.info(f"gist pgsync schema attributes: {self._schema_fields}")
 
         self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
         self.valid_schemas = {schema for schema, _ in self.valid_tables}
@@ -432,15 +432,15 @@ class Sync(Base, metaclass=Singleton):
 
         logger.debug(f"should_skip_event: validating event: {event}")
 
-        if (event['schema'], event['table']) in self._gist_schema_attributes:
-            if CHANGED_FIELD_NAME in event and event[CHANGED_FIELD_NAME] is not None:
+        if (event['schema'], event['table']) in self._schema_fields:
+            if CHANGED_FIELDS in event and event[CHANGED_FIELDS] is not None:
                 skip_status = True
-                for column in event[CHANGED_FIELD_NAME]:
-                    if column in self._gist_schema_attributes[(event['schema'], event['table'])]:
+                for column in event[CHANGED_FIELDS]:
+                    if column in self._schema_fields[(event['schema'], event['table'])]:
                         skip_status = False
                         break
                 if skip_status:
-                    logger.debug(f"should_skip_event: skip event as [ {event[CHANGED_FIELD_NAME]} ] was modifyed that not configured pgsync JSON schema for {event['schema']}.{event['table']} {self._gist_schema_attributes[(event['schema'], event['table'])]}")
+                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._gist_schema_attributes[(event['schema'], event['table'])]}")
                     return True
         else:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
@@ -533,11 +533,6 @@ class Sync(Base, metaclass=Singleton):
                 try:
                     payload: Payload = self.parse_logical_slot(row.data)
                     logger.debug(f"logical_slot_changes: parsed payload {payload}")
-
-#                    # check if the schema and table are in our valid set
-#                    if (payload.schema, payload.table) not in self.valid_tables:
-#                        logger.debug(f"skipping event for {payload.schema}.{payload.table} as it's not in the configured pgsync JSON schema")
-#                        continue  # skip to the next iteration: i.e. the next row in this loop
 
                 except Exception as e:
                     logger.exception(
@@ -1268,8 +1263,8 @@ class Sync(Base, metaclass=Singleton):
                     # make sure none of the ids (primary | foreign keys) are missing
                     if not self.should_skip_event(payload):
                         if self.index in payload["indices"]:
-                            if CHANGED_FIELD_NAME in payload:
-                                del payload[CHANGED_FIELD_NAME]
+                            if CHANGED_FIELDS in payload:
+                                del payload[CHANGED_FIELDS]
                             payloads.append(payload)
                             logger.debug(f"added to payloads from database: {payload}")
                             self.count["db"] += 1
@@ -1293,8 +1288,8 @@ class Sync(Base, metaclass=Singleton):
                 payload = json.loads(notification.payload)
                 if self.index in payload["indices"]:
                     if not self.should_skip_event(payload):
-                        if CHANGED_FIELD_NAME in payload:
-                            del payload[CHANGED_FIELD_NAME]
+                        if CHANGED_FIELDS in payload:
+                            del payload[CHANGED_FIELDS]
                         self.redis.push([payload])
                         logger.debug(f"pushed_to_redis: {payload}")
                         self.count["db"] += 1

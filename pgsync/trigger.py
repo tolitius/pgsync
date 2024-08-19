@@ -5,7 +5,7 @@ The trigger function constructs a notification as a JSON object and sends it to 
 The notification contains information about the updated table, the operation performed, the old and new rows, and the indices.
 """
 
-from .constants import MATERIALIZED_VIEW, TRIGGER_FUNC, CHANGED_FIELD_NAME
+from .constants import MATERIALIZED_VIEW, TRIGGER_FUNC, CHANGED_FIELDS
 
 CREATE_BIFROST_TRIGGER_TEMPLATE = f"""
 CREATE OR REPLACE FUNCTION {TRIGGER_FUNC}() RETURNS TRIGGER AS $$
@@ -20,7 +20,7 @@ DECLARE
   _indices TEXT [];
   _primary_keys TEXT [];
   _foreign_keys TEXT [];
-  {CHANGED_FIELD_NAME} JSON;
+  {CHANGED_FIELDS} JSON;
 
 BEGIN
     BEGIN
@@ -63,7 +63,7 @@ BEGIN
                         FROM JSON_EACH(old_row)
                         WHERE key = ANY(_primary_keys || _foreign_keys)
                     );
-                    {CHANGED_FIELD_NAME} := (
+                    {CHANGED_FIELDS} := (
                         SELECT JSON_AGG(key)
                         FROM (
                           SELECT * FROM JSONB_EACH(TO_JSONB(NEW))
@@ -85,7 +85,7 @@ BEGIN
             'tg_op', TG_OP,
             'table', TG_TABLE_NAME,
             'schema', TG_TABLE_SCHEMA,
-            '{CHANGED_FIELD_NAME}', {CHANGED_FIELD_NAME}
+            '{CHANGED_FIELDS}', {CHANGED_FIELDS}
         );
 
         -- Notify/Listen updates occur asynchronously,
@@ -165,7 +165,7 @@ DECLARE
   _indices TEXT [];
   _primary_keys TEXT [];
   _foreign_keys TEXT [];
-  {CHANGED_FIELD_NAME} JSON;
+  {CHANGED_FIELDS} JSON;
 
 BEGIN
     BEGIN
@@ -207,7 +207,7 @@ BEGIN
                         FROM JSON_EACH(old_row)
                         WHERE key = ANY(_primary_keys || _foreign_keys)
                     );
-                    {CHANGED_FIELD_NAME} := (
+                    {CHANGED_FIELDS} := (
                         SELECT JSON_AGG(key)
                         FROM (
                           SELECT * FROM JSONB_EACH(TO_JSONB(NEW))
@@ -229,7 +229,7 @@ BEGIN
             'tg_op', TG_OP,
             'table', TG_TABLE_NAME,
             'schema', TG_TABLE_SCHEMA,
-            '{CHANGED_FIELD_NAME}', {CHANGED_FIELD_NAME}
+            '{CHANGED_FIELDS}', {CHANGED_FIELDS}
         );
 
         -- Notify/Listen updates occur asynchronously,

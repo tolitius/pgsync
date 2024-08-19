@@ -189,7 +189,7 @@ PLUGIN = "test_decoding"
 # Trigger function
 TRIGGER_FUNC = "table_notify"
 
-CHANGED_FIELD_NAME = "changed_fields"
+CHANGED_FIELDS = "changed_fields"
 
 # Views
 # added underscore to reduce chance of collisions
