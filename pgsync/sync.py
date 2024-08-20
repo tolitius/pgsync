@@ -30,6 +30,7 @@ from .constants import (
     TG_OP,
     TRUNCATE,
     UPDATE,
+    CHANGED_FIELDS,
 )
 from .exc import (
     ForeignKeyError,
@@ -111,6 +112,17 @@ class Sync(Base, metaclass=Singleton):
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
+
+        self._schema_fields: t.Dict[set] = {}
+        for node in self.tree.traverse_post_order():
+            key: t.Tuple[str, str] = (node.schema, node.table)
+            column_names = {str(column) for column in node.columns if isinstance(column, str)}
+            if key in self._schema_fields:
+                self._schema_fields[key].union(column_names)
+            else:
+                self._schema_fields[key] = column_names
+
+        logger.info(f"gist pgsync schema attributes: {self._schema_fields}")
 
         self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
         self.valid_schemas = {schema for schema, _ in self.valid_tables}
@@ -418,10 +430,20 @@ class Sync(Base, metaclass=Singleton):
                 that are skippable as per settings.SKIP_NULL_KEYS
         """
 
-        logger.debug(f"validating event: {event}")
+        logger.debug(f"should_skip_event: validating event: {event}")
 
-        if (event['schema'], event['table']) not in self.valid_tables:
-            logger.debug(f"skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
+        if (event['schema'], event['table']) in self._schema_fields:
+            if CHANGED_FIELDS in event and event[CHANGED_FIELDS] is not None:
+                skip_status = True
+                for column in event[CHANGED_FIELDS]:
+                    if column in self._schema_fields[(event['schema'], event['table'])]:
+                        skip_status = False
+                        break
+                if skip_status:
+                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._gist_schema_attributes[(event['schema'], event['table'])]}")
+                    return True
+        else:
+            logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
 
         new = event['new']
@@ -433,10 +455,10 @@ class Sync(Base, metaclass=Singleton):
 
             if not should_skip:   # if empty list, which means no keys are empty OR empty keys are not in settings.SKIP_NULL_KEYS
                 if empty_keys:
-                    logger.info(f"detected keys with empty values {empty_keys}, but not skipping this event because these keys are not in settings.SKIP_NULL_KEYS which is currently set to {settings.SKIP_NULL_KEYS}")
+                    logger.info(f"should_skip_event: detected keys with empty values {empty_keys}, but not skipping this event because these keys are not in settings.SKIP_NULL_KEYS which is currently set to {settings.SKIP_NULL_KEYS}")
                 return False
             else:                 # if there is at least one key that is in settings.SKIP_NULL_KEYS
-                logger.debug(f"skipping event {event} as it has empty {should_skip} keys that are in settings.SKIP_NULL_KEYS {settings.SKIP_NULL_KEYS}")
+                logger.debug(f"should_skip_event: skipping event {event} as it has empty {should_skip} keys that are in settings.SKIP_NULL_KEYS {settings.SKIP_NULL_KEYS}")
                 return True       # we will return true, which means these record will be skipped
 
         return False
@@ -511,11 +533,6 @@ class Sync(Base, metaclass=Singleton):
                 try:
                     payload: Payload = self.parse_logical_slot(row.data)
                     logger.debug(f"logical_slot_changes: parsed payload {payload}")
-
-                    # check if the schema and table are in our valid set
-                    if (payload.schema, payload.table) not in self.valid_tables:
-                        logger.debug(f"skipping event for {payload.schema}.{payload.table} as it's not in the configured pgsync JSON schema")
-                        continue  # skip to the next iteration: i.e. the next row in this loop
 
                 except Exception as e:
                     logger.exception(
@@ -1246,11 +1263,11 @@ class Sync(Base, metaclass=Singleton):
                     # make sure none of the ids (primary | foreign keys) are missing
                     if not self.should_skip_event(payload):
                         if self.index in payload["indices"]:
+                            if CHANGED_FIELDS in payload:
+                                del payload[CHANGED_FIELDS]
                             payloads.append(payload)
                             logger.debug(f"added to payloads from database: {payload}")
                             self.count["db"] += 1
-                    else:
-                        logger.error(f"missing primary | foreign keys: {payload}")
 
     @exception
     def async_poll_db(self) -> None:
@@ -1271,11 +1288,11 @@ class Sync(Base, metaclass=Singleton):
                 payload = json.loads(notification.payload)
                 if self.index in payload["indices"]:
                     if not self.should_skip_event(payload):
+                        if CHANGED_FIELDS in payload:
+                            del payload[CHANGED_FIELDS]
                         self.redis.push([payload])
                         logger.debug(f"pushed_to_redis: {payload}")
                         self.count["db"] += 1
-                    else:
-                        logger.error(f"skipping redis push due to the event missing primary | foreign keys: {payload}")
 
     def refresh_views(self) -> None:
         self._refresh_views()

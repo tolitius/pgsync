@@ -5,7 +5,7 @@ The trigger function constructs a notification as a JSON object and sends it to 
 The notification contains information about the updated table, the operation performed, the old and new rows, and the indices.
 """
 
-from .constants import MATERIALIZED_VIEW, TRIGGER_FUNC
+from .constants import MATERIALIZED_VIEW, TRIGGER_FUNC, CHANGED_FIELDS
 
 CREATE_BIFROST_TRIGGER_TEMPLATE = f"""
 CREATE OR REPLACE FUNCTION {TRIGGER_FUNC}() RETURNS TRIGGER AS $$
@@ -20,6 +20,7 @@ DECLARE
   _indices TEXT [];
   _primary_keys TEXT [];
   _foreign_keys TEXT [];
+  {CHANGED_FIELDS} JSON;
 
 BEGIN
     BEGIN
@@ -62,6 +63,14 @@ BEGIN
                         FROM JSON_EACH(old_row)
                         WHERE key = ANY(_primary_keys || _foreign_keys)
                     );
+                    {CHANGED_FIELDS} := (
+                        SELECT JSON_AGG(key)
+                        FROM (
+                          SELECT * FROM JSONB_EACH(TO_JSONB(NEW))
+                            EXCEPT
+                              SELECT * FROM JSONB_EACH(TO_JSONB(OLD))
+                        ) as t
+                    );
                 END IF;
                 xmin := NEW.xmin;
             END IF;
@@ -75,7 +84,8 @@ BEGIN
             'indices', _indices,
             'tg_op', TG_OP,
             'table', TG_TABLE_NAME,
-            'schema', TG_TABLE_SCHEMA
+            'schema', TG_TABLE_SCHEMA,
+            '{CHANGED_FIELDS}', {CHANGED_FIELDS}
         );
 
         -- Notify/Listen updates occur asynchronously,
@@ -155,6 +165,7 @@ DECLARE
   _indices TEXT [];
   _primary_keys TEXT [];
   _foreign_keys TEXT [];
+  {CHANGED_FIELDS} JSON;
 
 BEGIN
     BEGIN
@@ -196,6 +207,14 @@ BEGIN
                         FROM JSON_EACH(old_row)
                         WHERE key = ANY(_primary_keys || _foreign_keys)
                     );
+                    {CHANGED_FIELDS} := (
+                        SELECT JSON_AGG(key)
+                        FROM (
+                          SELECT * FROM JSONB_EACH(TO_JSONB(NEW))
+                            EXCEPT
+                              SELECT * FROM JSONB_EACH(TO_JSONB(OLD))
+                        ) as t
+                    );
                 END IF;
                 xmin := NEW.xmin;
             END IF;
@@ -209,7 +228,8 @@ BEGIN
             'indices', _indices,
             'tg_op', TG_OP,
             'table', TG_TABLE_NAME,
-            'schema', TG_TABLE_SCHEMA
+            'schema', TG_TABLE_SCHEMA,
+            '{CHANGED_FIELDS}', {CHANGED_FIELDS}
         );
 
         -- Notify/Listen updates occur asynchronously,

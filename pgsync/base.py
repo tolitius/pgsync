@@ -697,8 +697,8 @@ class Base(object):
         for table in self.tables(schema):
             if tables and table not in tables:
                 continue
-            logger.debug(f"Dropping trigger on table: {schema}.{table}")
             for name in ("notify", "truncate"):
+                logger.debug(f"Dropping trigger on table: {schema}.{table}_{name}")
                 queries.append(
                     f'DROP TRIGGER IF EXISTS "{table}_{name}" ON '
                     f'"{schema}"."{table}"'
