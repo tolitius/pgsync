@@ -440,7 +440,7 @@ class Sync(Base, metaclass=Singleton):
                         skip_status = False
                         break
                 if skip_status:
-                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._gist_schema_attributes[(event['schema'], event['table'])]}")
+                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
                     return True
         else:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
