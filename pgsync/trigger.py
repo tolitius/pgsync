@@ -101,6 +101,7 @@ BEGIN
             tg_op,
             table_name,
             schema_name,
+            {CHANGED_FIELDS},
             status,
             recorded_at)
         values (
@@ -111,6 +112,7 @@ BEGIN
             TG_OP,
             TG_TABLE_NAME,
             TG_TABLE_SCHEMA,
+            {CHANGED_FIELDS},
             'SUCCESS',
             recorded_at);
 
@@ -130,6 +132,7 @@ BEGIN
                 tg_op,
                 table_name,
                 schema_name,
+                {CHANGED_FIELDS},
                 status,
                 error_details,
                 recorded_at)
@@ -141,6 +144,7 @@ BEGIN
                 TG_OP,
                 TG_TABLE_NAME,
                 TG_TABLE_SCHEMA,
+                {CHANGED_FIELDS},
                 'ERROR',
                 error_details,
                 recorded_at);
