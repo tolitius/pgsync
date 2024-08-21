@@ -189,6 +189,8 @@ PLUGIN = "test_decoding"
 # Trigger function
 TRIGGER_FUNC = "table_notify"
 
+CHANGED_FIELDS = "changed_fields"
+
 # Views
 # added underscore to reduce chance of collisions
 MATERIALIZED_VIEW = "_view"

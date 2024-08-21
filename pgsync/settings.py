@@ -39,7 +39,7 @@ QUERY_LITERAL_BINDS = env.bool("QUERY_LITERAL_BINDS", default=False)
 # db query chunk size (how many records to fetch at a time)
 QUERY_CHUNK_SIZE = env.int("QUERY_CHUNK_SIZE", default=10000)
 FILTER_CHUNK_SIZE = env.int("FILTER_CHUNK_SIZE", default=5000)
-CAN_CREATE_REPLICATION_SLOT = env.bool("CAN_CREATE_REPLICATION_SLOT", default=False)
+REPLICATION_SLOT_CREATE_CHECK = env.bool("REPLICATION_SLOT_CREATE_CHECK", default=False)
 # replication slot cleanup interval (in secs)
 REPLICATION_SLOT_CLEANUP_INTERVAL = env.float(
     "REPLICATION_SLOT_CLEANUP_INTERVAL",
