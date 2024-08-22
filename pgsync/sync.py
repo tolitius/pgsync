@@ -111,7 +111,7 @@ class Sync(Base, metaclass=Singleton):
             logger.debug(f"plugins available for transformations are {self.plugins}")
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
-        self.count: dict = dict(xlog=0, db=0, redis=0)
+        self.count: dict = dict(xlog=0, db=0, redis=0, skip_redis=0, skip_xlog=0, notifications=0)
 
         self._schema_fields: t.Dict[set] = {}
         for node in self.tree.traverse_post_order():
@@ -437,6 +437,12 @@ class Sync(Base, metaclass=Singleton):
 
         logger.debug(f"should_skip_event: validating event: {event}")
 
+        if event['indices'] is not None:
+            # event['indices'] set to None when pgsync parse replication slot
+            if self.index in [event['indices']]:
+                logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
+                return True
+
         if (event['schema'], event['table']) in self._schema_fields:
             if CHANGED_FIELDS in event and event[CHANGED_FIELDS] is not None:
                 skip_status = True
@@ -573,6 +579,8 @@ class Sync(Base, metaclass=Singleton):
                             self.index, self._payloads(payloads)
                         )
                         payloads: list = []
+                else:
+                    self.count["skip_xlog"] += 1
 
             logger.debug(f"logical_slot_changes: pulling logical slot changes: txmin: {txmin}, txmax: {txmax}, upto_nchanges: {upto_nchanges}, limit: {limit}, offset: {offset}")
 
@@ -1263,16 +1271,17 @@ class Sync(Base, metaclass=Singleton):
                     self.redis.push(payloads)
                     payloads = []
                 notification: t.AnyStr = conn.notifies.pop(0)
+                self.count['notifications'] += 1
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
-                    # make sure none of the ids (primary | foreign keys) are missing
                     if not self.should_skip_event(payload):
-                        if self.index in payload["indices"]:
-                            if CHANGED_FIELDS in payload:
-                                del payload[CHANGED_FIELDS]
-                            payloads.append(payload)
-                            logger.debug(f"added to payloads from database: {payload}")
-                            self.count["db"] += 1
+                        if CHANGED_FIELDS in payload:
+                            del payload[CHANGED_FIELDS]
+                        payloads.append(payload)
+                        logger.debug(f"added to payloads from database: {payload}")
+                        self.count["db"] += 1
+                    else:
+                        self.count["skip_redis"] += 1
 
     @exception
     def async_poll_db(self) -> None:
@@ -1289,15 +1298,17 @@ class Sync(Base, metaclass=Singleton):
 
         while self.conn.notifies:
             notification: t.AnyStr = self.conn.notifies.pop(0)
+            self.count['notifications'] += 1
             if notification.channel == self.database:
                 payload = json.loads(notification.payload)
-                if self.index in payload["indices"]:
-                    if not self.should_skip_event(payload):
-                        if CHANGED_FIELDS in payload:
-                            del payload[CHANGED_FIELDS]
-                        self.redis.push([payload])
-                        logger.debug(f"pushed_to_redis: {payload}")
-                        self.count["db"] += 1
+                if not self.should_skip_event(payload):
+                    if CHANGED_FIELDS in payload:
+                        del payload[CHANGED_FIELDS]
+                    self.redis.push([payload])
+                    logger.debug(f"pushed_to_redis: {payload}")
+                    self.count["db"] += 1
+                else:
+                    self.count["skip_redis"] += 1
 
     def refresh_views(self) -> None:
         self._refresh_views()
@@ -1425,8 +1436,11 @@ class Sync(Base, metaclass=Singleton):
             f"Xlog: [{self.count['xlog']:,}] => "
             f"Db: [{self.count['db']:,}] => "
             f"Redis: [{self.redis.qsize:,}] => "
-            f"{self.search_client.name}: [{self.search_client.doc_count:,}]"
-            f"...\n"
+            f"{self.search_client.name}: [{self.search_client.doc_count:,}] => "
+            f"skip-Xlog: [{self.count['skip_xlog']:,}] => "
+            f"skip-Redis: [{self.count['skip_redis']:,}] => "
+            f"Events: [{self.count['notifications']:,}]"
+            f"\n"
         )
         sys.stdout.flush()
 
