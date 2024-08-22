@@ -1271,12 +1271,11 @@ class Sync(Base, metaclass=Singleton):
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
                     if not self.should_skip_event(payload):
-                        if self.index in payload["indices"]:
-                            if CHANGED_FIELDS in payload:
-                                del payload[CHANGED_FIELDS]
-                            payloads.append(payload)
-                            logger.debug(f"added to payloads from database: {payload}")
-                            self.count["db"] += 1
+                        if CHANGED_FIELDS in payload:
+                            del payload[CHANGED_FIELDS]
+                        payloads.append(payload)
+                        logger.debug(f"added to payloads from database: {payload}")
+                        self.count["db"] += 1
                     else:
                         self.count["skip_redis"] += 1
 
