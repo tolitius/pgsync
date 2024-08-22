@@ -436,7 +436,7 @@ class Sync(Base, metaclass=Singleton):
         if event['indices'] is not None:
             # event['indices'] set to None when pgsync parse replication slot
             if self.index in [event['indices']]:
-                logger.debug(f"should_skip_event: skipping event, the evnet's index list names is not matche pgsync JSON schema name")
+                logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                 return True
 
         if (event['schema'], event['table']) in self._schema_fields:
