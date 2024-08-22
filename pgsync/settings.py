@@ -189,6 +189,9 @@ KAFKA_BOOTSTRAP_SERVERS = env.str("KAFKA_BOOTSTRAP_SERVERS", default=None)
 KAFKA_TOPIC_NAME = env.str("KAFKA_TOPIC_NAME", default=None)
 KAFKA_MAX_BLOCK_MS = env.int("KAFKA_MAX_BLOCK_MS", default=60000)
 KAFKA_MESSAGE_MAX_BYTES = env.int("KAFKA_MESSAGE_MAX_BYTES", default=10485760) # 10MB
+# will call "rd_kafka_poll(rk, 0)" (libkarfka) after a batch size of events are published
+# TODO: needs to be time based, but that would need a thread
+KAFKA_PRODUCER_CALLBACK_BATCH_SIZE = env.int("KAFKA_PRODUCER_CALLBACK_BATCH_SIZE", default=10000)
 
 BIFROST_ENABLED = env.bool("BIFROST_ENABLED", default=False)
 

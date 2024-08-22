@@ -139,6 +139,7 @@ class Sync(Base, metaclass=Singleton):
             }
 
             self.kafka_producer = Producer(config)
+            self.kafka_produced = 0
             logger.debug(f"kafka producer is up. will publish transformed docs to {settings.KAFKA_TOPIC_NAME} topic")
 
     def validate(self, repl_slots: bool = True) -> None:
@@ -401,7 +402,10 @@ class Sync(Base, metaclass=Singleton):
                 self.kafka_producer.produce(topic=settings.KAFKA_TOPIC_NAME,
                                             key=str.encode(doc_id),
                                             value=jdoc)
-                self.kafka_producer.poll(timeout=0.0)
+                self.kafka_produced += 1
+                if self.kafka_produced % settings.KAFKA_PRODUCER_CALLBACK_BATCH_SIZE == 0:
+                    logger.debug(f"kafka producer: {self.kafka_produced} documents published to {settings.KAFKA_TOPIC_NAME} topic")
+                    self.kafka_producer.poll(timeout=0.0)
                 break
 
             except BufferError as berr:
