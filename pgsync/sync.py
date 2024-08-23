@@ -437,8 +437,12 @@ class Sync(Base, metaclass=Singleton):
 
         logger.debug(f"should_skip_event: validating event: {event}")
 
+        if event['old'] is None and event['new'] is None and event['tg_op'] != 'TRUNCATE':
+            logger.debug(f"should_skip_event: skipping event, event[\"old\"] and event[\"new\"] is set to None and tg_op is {event['tg_op']}")
+            return True
+
         if event['indices'] is not None:
-            # event['indices'] set to None when pgsync parse replication slot
+            # event['indices'] set to None when pgsync parsing replication slot
             if self.index in [event['indices']]:
                 logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                 return True
