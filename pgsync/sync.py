@@ -58,6 +58,7 @@ from .utils import (
     show_settings,
     threaded,
     Timer,
+    Counter,
 )
 from confluent_kafka import Producer
 
@@ -111,7 +112,7 @@ class Sync(Base, metaclass=Singleton):
             logger.debug(f"plugins available for transformations are {self.plugins}")
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
-        self.count: dict = dict(xlog=0, db=0, redis=0, skip_redis=0, skip_xlog=0, notifications=0)
+        self.count: dict = dict(xlog=0, db=0, redis=0, skip_redis=0, skip_xlog=0, notifications=Counter())
 
         self._schema_fields: t.Dict[set] = {}
         for node in self.tree.traverse_post_order():
@@ -1271,7 +1272,7 @@ class Sync(Base, metaclass=Singleton):
                     self.redis.push(payloads)
                     payloads = []
                 notification: t.AnyStr = conn.notifies.pop(0)
-                self.count['notifications'] += 1
+                self.count['notifications'].increment()
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
                     if not self.should_skip_event(payload):
@@ -1298,7 +1299,7 @@ class Sync(Base, metaclass=Singleton):
 
         while self.conn.notifies:
             notification: t.AnyStr = self.conn.notifies.pop(0)
-            self.count['notifications'] += 1
+            self.count['notifications'].increment()
             if notification.channel == self.database:
                 payload = json.loads(notification.payload)
                 if not self.should_skip_event(payload):
@@ -1439,7 +1440,7 @@ class Sync(Base, metaclass=Singleton):
             f"{self.search_client.name}: [{self.search_client.doc_count:,}] => "
             f"skip-Xlog: [{self.count['skip_xlog']:,}] => "
             f"skip-Redis: [{self.count['skip_redis']:,}] => "
-            f"Events: [{self.count['notifications']:,}]"
+            f"Events: [{self.count['notifications'].value():,}]"
             f"\n"
         )
         sys.stdout.flush()

@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import threading
+from multiprocessing import Value
 import typing as t
 from datetime import timedelta
 import datetime
@@ -43,6 +44,19 @@ def timeit(func: t.Callable):
         return fn
 
     return timed
+
+class Counter:
+
+    def __init__(self, initial_value=0):
+        self.val = Value('l', initial_value)
+        self.lock = self.val.get_lock()
+
+    def increment(self, amount=1):
+        with self.lock:
+            self.val.value += amount
+
+    def value(self):
+        return self.val.value
 
 
 class Timer:
