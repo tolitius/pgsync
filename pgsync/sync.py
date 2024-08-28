@@ -123,7 +123,7 @@ class Sync(Base, metaclass=Singleton):
             else:
                 self._schema_fields[key] = column_names
 
-        logger.info(f"gist pgsync schema attributes: {self._schema_fields}")
+        logger.info(f"configured custom pgsync schema attributes: {self._schema_fields}")
 
         self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
         self.valid_schemas = {schema for schema, _ in self.valid_tables}
