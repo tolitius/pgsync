@@ -10,24 +10,21 @@ from .constants import MATERIALIZED_VIEW, TRIGGER_FUNC, CHANGED_FIELDS
 CREATE_BIFROST_TRIGGER_TEMPLATE = f"""
 CREATE OR REPLACE FUNCTION {TRIGGER_FUNC}() RETURNS TRIGGER AS $$
 DECLARE
-  channel TEXT;
+  -- database is also the channel name.
+  channel TEXT := CURRENT_DATABASE();
   old_row JSON;
   new_row JSON;
   notification JSON;
   xmin BIGINT;
-  recorded_at numeric;
+  recorded_at numeric := EXTRACT(EPOCH FROM now()::timestamp);
   error_details JSON;
   _indices TEXT [];
   _primary_keys TEXT [];
   _foreign_keys TEXT [];
-  {CHANGED_FIELDS} JSON;
+  changed_fields JSON;
 
 BEGIN
     BEGIN
-         -- database is also the channel name.
-        channel := CURRENT_DATABASE();
-        recorded_at := EXTRACT(EPOCH FROM now()::timestamp);
-
         IF TG_OP = 'DELETE' THEN
 
             SELECT primary_keys, indices
@@ -35,12 +32,12 @@ BEGIN
             FROM {MATERIALIZED_VIEW}
             WHERE table_name = TG_TABLE_NAME;
 
-            old_row = ROW_TO_JSON(OLD);
             old_row := (
                 SELECT JSONB_OBJECT_AGG(key, value)
-                FROM JSON_EACH(old_row)
+                FROM JSONB_EACH(TO_JSONB(OLD))
                 WHERE key = ANY(_primary_keys)
             );
+
             xmin := OLD.xmin;
         ELSE
             IF TG_OP <> 'TRUNCATE' THEN
@@ -50,20 +47,18 @@ BEGIN
                 FROM {MATERIALIZED_VIEW}
                 WHERE table_name = TG_TABLE_NAME;
 
-                new_row = ROW_TO_JSON(NEW);
                 new_row := (
                     SELECT JSONB_OBJECT_AGG(key, value)
-                    FROM JSON_EACH(new_row)
+                    FROM JSONB_EACH(TO_JSONB(NEW))
                     WHERE key = ANY(_primary_keys || _foreign_keys)
                 );
                 IF TG_OP = 'UPDATE' THEN
-                    old_row = ROW_TO_JSON(OLD);
                     old_row := (
                         SELECT JSONB_OBJECT_AGG(key, value)
-                        FROM JSON_EACH(old_row)
+                        FROM JSONB_EACH(TO_JSONB(OLD))
                         WHERE key = ANY(_primary_keys || _foreign_keys)
                     );
-                    {CHANGED_FIELDS} := (
+                    changed_fields := (
                         SELECT JSON_AGG(key)
                         FROM (
                           SELECT * FROM JSONB_EACH(TO_JSONB(NEW))
@@ -85,7 +80,7 @@ BEGIN
             'tg_op', TG_OP,
             'table', TG_TABLE_NAME,
             'schema', TG_TABLE_SCHEMA,
-            '{CHANGED_FIELDS}', {CHANGED_FIELDS}
+            '{CHANGED_FIELDS}', changed_fields
         );
 
         -- Notify/Listen updates occur asynchronously,
@@ -101,18 +96,18 @@ BEGIN
             tg_op,
             table_name,
             schema_name,
-            {CHANGED_FIELDS},
+            changed_fields,
             status,
             recorded_at)
         values (
             xmin,
             new_row,
             old_row,
-            _indices,
+            to_jsonb(_indices),
             TG_OP,
             TG_TABLE_NAME,
             TG_TABLE_SCHEMA,
-            {CHANGED_FIELDS},
+            changed_fields,
             'SUCCESS',
             recorded_at);
 
@@ -132,7 +127,7 @@ BEGIN
                 tg_op,
                 table_name,
                 schema_name,
-                {CHANGED_FIELDS},
+                changed_fields,
                 status,
                 error_details,
                 recorded_at)
@@ -140,11 +135,11 @@ BEGIN
                 xmin,
                 new_row,
                 old_row,
-                _indices,
+                to_jsonb(_indices),
                 TG_OP,
                 TG_TABLE_NAME,
                 TG_TABLE_SCHEMA,
-                {CHANGED_FIELDS},
+                changed_fields,
                 'ERROR',
                 error_details,
                 recorded_at);
@@ -155,7 +150,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql security definer;
 """
 
 CREATE_TRIGGER_TEMPLATE = f"""
