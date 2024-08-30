@@ -28,6 +28,7 @@ from .exc import (
 from .settings import (
     PG_SSLMODE,
     PG_SSLROOTCERT,
+    PG_APPLICATION_NAME,
     QUERY_CHUNK_SIZE,
     STREAM_RESULTS,
     BIFROST_ENABLED,
@@ -1026,10 +1027,12 @@ def _pg_engine(
     echo: bool = False,
     sslmode: t.Optional[str] = None,
     sslrootcert: t.Optional[str] = None,
+    application_name: t.Optional[str] = None,
 ) -> sa.engine.Engine:
     connect_args: dict = {}
     sslmode = sslmode or PG_SSLMODE
     sslrootcert = sslrootcert or PG_SSLROOTCERT
+    connect_args["application_name"] = application_name or PG_APPLICATION_NAME
 
     if sslmode:
         if sslmode not in SSL_MODES:

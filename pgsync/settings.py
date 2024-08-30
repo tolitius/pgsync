@@ -168,6 +168,7 @@ PG_PORT = env.int("PG_PORT", default=5432)
 PG_SSLMODE = env.str("PG_SSLMODE", default=None)
 PG_SSLROOTCERT = env.str("PG_SSLROOTCERT", default=None)
 PG_USER = env.str("PG_USER")
+PG_APPLICATION_NAME = env.str("PG_APPLICATION_NAME", default="pgsync")
 
 # Redis:
 REDIS_AUTH = env.str("REDIS_AUTH", default=None)
