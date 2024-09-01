@@ -75,7 +75,7 @@ class Payload(object):
         indices (List[str]): The indices of the affected rows (for UPDATE and DELETE operations).
     """
 
-    __slots__ = ("tg_op", "table", "schema", "old", "new", "xmin", "indices")
+    __slots__ = ("tg_op", "table", "schema", "old", "new", "xmin", "indices", "changed_fields")
 
     def __init__(
         self,
@@ -86,6 +86,7 @@ class Payload(object):
         new: dict = t.Optional[None],
         xmin: int = t.Optional[None],
         indices: t.List[str] = t.Optional[None],
+        changed_fields: t.List[str] = t.Optional[None],
     ):
         self.tg_op: str = tg_op
         self.table: str = table
@@ -94,12 +95,13 @@ class Payload(object):
         self.new: dict = new or {}
         self.xmin: str = xmin
         self.indices: t.List[str] = indices
+        self.changed_fields: t.List[str] = changed_fields
 
     def to_slot(self):
         return {key : getattr(self, key, None) for key in self.__slots__}
 
     def __repr__(self):
-        return f'Payload("tg_op: {self.tg_op}, table: {self.table}, schema: {self.schema}, old: {self.old}, new: {self.new}, xmin: {self.xmin}, indices: {self.indices})'
+        return f'Payload("tg_op: {self.tg_op}, table: {self.table}, schema: {self.schema}, old: {self.old}, new: {self.new}, xmin: {self.xmin}, indices: {self.indices}, changed_fields: {self.changed_fields})'
 
     @property
     def data(self) -> dict:
