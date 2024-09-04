@@ -1117,60 +1117,50 @@ class Sync(Base, metaclass=Singleton):
 
         logger.debug(f"sync started: {count} events to sync")
 
-        with click.progressbar(
-            length=count,
-            show_pos=True,
-            show_percent=True,
-            show_eta=True,
-            fill_char="=",
-            empty_char="-",
-            width=50,
-        ) as bar:
-            for i, (keys, row, primary_keys) in enumerate(
-                self.fetchmany(node._subquery)
+        for i, (keys, row, primary_keys) in enumerate(
+            self.fetchmany(node._subquery)
+        ):
+
+            row: dict = Transform.transform(row, self.nodes)
+
+            row[META] = Transform.get_primary_keys(keys)
+
+            if i % 100 == 0:
+                logger.debug(f"synced {i} events")
+
+            if self.verbose:
+                print(f"{(i+1)})")
+                print(f"pkeys: {primary_keys}")
+                pprint.pprint(row)
+                print("-" * 10)
+
+            doc: dict = {
+                "_id": self.get_doc_id(primary_keys, node.table),
+                "_index": self.index,
+                "_source": row,
+            }
+
+            if self.routing:
+                doc["_routing"] = row[self.routing]
+
+            if (
+                self.search_client.major_version < 7
+                and not self.search_client.is_opensearch
             ):
-                bar.update(1)
+                doc["_type"] = "_doc"
 
-                row: dict = Transform.transform(row, self.nodes)
+            if self._plugins:
+                doc = next(self._plugins.transform([doc]))
+                if not doc:
+                    continue
 
-                row[META] = Transform.get_primary_keys(keys)
+            if self.pipeline:
+                doc["pipeline"] = self.pipeline
 
-                if i % 100 == 0:
-                    logger.debug(f"synced {i} events")
+            if settings.KAFKA_ENABLED:
+                self.publish_to_kafka(doc, txmin, txmax)
 
-                if self.verbose:
-                    print(f"{(i+1)})")
-                    print(f"pkeys: {primary_keys}")
-                    pprint.pprint(row)
-                    print("-" * 10)
-
-                doc: dict = {
-                    "_id": self.get_doc_id(primary_keys, node.table),
-                    "_index": self.index,
-                    "_source": row,
-                }
-
-                if self.routing:
-                    doc["_routing"] = row[self.routing]
-
-                if (
-                    self.search_client.major_version < 7
-                    and not self.search_client.is_opensearch
-                ):
-                    doc["_type"] = "_doc"
-
-                if self._plugins:
-                    doc = next(self._plugins.transform([doc]))
-                    if not doc:
-                        continue
-
-                if self.pipeline:
-                    doc["pipeline"] = self.pipeline
-
-                if settings.KAFKA_ENABLED:
-                    self.publish_to_kafka(doc, txmin, txmax)
-
-                yield doc
+            yield doc
 
     @property
     def checkpoint(self) -> int:
