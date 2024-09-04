@@ -425,8 +425,7 @@ class Sync(Base, metaclass=Singleton):
         expects an event payload from postgres notification queue
         that has two keys: 'new' and 'old':
 
-        Payload(
-            ...
+        Payload( ...
             old={'id': 1, 'foreign_1_id': 2, 'foreign_2_id': 12},
             new={'id': 4, 'foreign_1_id': 3, 'foreign_2_id': None},
         ),
@@ -442,9 +441,11 @@ class Sync(Base, metaclass=Singleton):
             logger.debug(f"should_skip_event: skipping event, event[\"old\"] and event[\"new\"] is set to None and tg_op is {event['tg_op']}")
             return True
 
-        if event['indices'] is not None and event['indices'] != type(None) :
-            # event['indices'] set to None when pgsync parsing replication slot
-            if self.index in [event['indices']]:
+        if event['indices'] is None:
+            logger.debug(f"should_skip_event: skipping event, event[\"indices\"] is set to None")
+            return True
+        elif event['indices'] != type(None):
+            if self.index not in event['indices']:
                 logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                 return True
 
