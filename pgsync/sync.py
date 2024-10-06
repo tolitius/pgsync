@@ -11,6 +11,7 @@ import sys
 import time
 import typing as t
 from collections import defaultdict
+from threading import current_thread
 
 import click
 import sqlalchemy as sa
@@ -115,9 +116,20 @@ class Sync(Base, metaclass=Singleton):
         self.count: dict = dict(xlog=0, db=0, redis=0, skip_redis=0, skip_xlog=0, notifications=Counter())
 
         self._schema_fields: t.Dict[set] = {}
-        for node in self.tree.traverse_post_order():
+        for node in self.tree.traverse_breadth_first():
             key: t.Tuple[str, str] = (node.schema, node.table)
             column_names = {str(column) for column in node.columns if isinstance(column, str)}
+
+            if node.relationship.foreign_key.child:
+                column_names.union(node.relationship.foreign_key.child)
+
+            if node.relationship.foreign_key.parent:
+                key_parent: t.Tuple[str, str] = (node.parent.schema, node.parent.table)
+                if key_parent in self._schema_fields:
+                    self._schema_fields[key_parent].union(node.relationship.foreign_key.parent)
+                else:
+                    self._schema_fields[key_parent] = set(node.relationship.foreign_key.parent)
+
             if key in self._schema_fields:
                 self._schema_fields[key].union(column_names)
             else:
@@ -1116,7 +1128,8 @@ class Sync(Base, metaclass=Singleton):
 
         count: int = self.fetchcount(node._subquery)
 
-        logger.debug(f"sync started: {count} events to sync")
+        logger.debug(f"sync started: {count} documents to sync")
+        batch_size: int = 100
 
         for i, (keys, row, primary_keys) in enumerate(
             self.fetchmany(node._subquery)
@@ -1126,8 +1139,8 @@ class Sync(Base, metaclass=Singleton):
 
             row[META] = Transform.get_primary_keys(keys)
 
-            if i % 100 == 0:
-                logger.debug(f"synced {i} events")
+            if i % batch_size == 0:
+                logger.debug(f"document's batch #{( i // batch_size )}x{batch_size} synced")
 
             if self.verbose:
                 print(f"{(i+1)})")
@@ -1206,6 +1219,9 @@ class Sync(Base, metaclass=Singleton):
     @exception
     def poll_redis(self) -> None:
         """Consumer which polls Redis continuously."""
+        thread = current_thread()
+        thread.name = thread.name.replace('Thread', 'poll_redis')
+
         while True:
             self._poll_redis()
 
@@ -1234,6 +1250,9 @@ class Sync(Base, metaclass=Singleton):
 
         Receive a notification message from the channel we are listening on
         """
+        thread = current_thread()
+        thread.name = 'poll_db'
+
         conn = self.engine.connect().connection
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         cursor = conn.cursor()
@@ -1394,6 +1413,9 @@ class Sync(Base, metaclass=Singleton):
     @exception
     def truncate_slots(self) -> None:
         """Truncate the logical replication slot."""
+        thread = current_thread()
+        thread.name = 'truncate_slots'
+
         while True:
             self._truncate_slots()
             time.sleep(settings.REPLICATION_SLOT_CLEANUP_INTERVAL)
@@ -1412,6 +1434,9 @@ class Sync(Base, metaclass=Singleton):
     @threaded
     @exception
     def status(self) -> None:
+        thread = current_thread()
+        thread.name = 'status'
+
         while True:
             self._status(label="Sync")
             time.sleep(settings.LOG_INTERVAL)
