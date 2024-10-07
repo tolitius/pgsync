@@ -1129,7 +1129,7 @@ class Sync(Base, metaclass=Singleton):
         count: int = self.fetchcount(node._subquery)
 
         logger.debug(f"sync started: {count} documents to sync")
-        batch_size: int = 100
+        log_every: int = 100
 
         for i, (keys, row, primary_keys) in enumerate(
             self.fetchmany(node._subquery)
@@ -1139,8 +1139,8 @@ class Sync(Base, metaclass=Singleton):
 
             row[META] = Transform.get_primary_keys(keys)
 
-            if i % batch_size == 0:
-                logger.debug(f"document's batch #{( i // batch_size )}x{batch_size} synced")
+            if i % log_every == 0:
+                logger.debug(f"synced {i} documents (batch #{( i // log_every )} x {log_every})")
 
             if self.verbose:
                 print(f"{(i+1)})")
