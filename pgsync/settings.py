@@ -204,7 +204,7 @@ def _get_logging_config(silent_loggers: t.Optional[str] = None):
         "disable_existing_loggers": False,
         "formatters": {
             "simple": {
-                "format": "%(asctime)s.%(msecs)03d:%(levelname)s:%(name)s: %(message)s",  # noqa E501
+                "format": "%(asctime)s.%(msecs)03d:%(threadName)s:%(levelname)s:%(name)s: %(message)s",  # noqa E501
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
         },
