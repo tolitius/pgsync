@@ -194,7 +194,9 @@ KAFKA_MESSAGE_MAX_BYTES = env.int("KAFKA_MESSAGE_MAX_BYTES", default=10485760) #
 # TODO: needs to be time based, but that would need a thread
 KAFKA_PRODUCER_CALLBACK_BATCH_SIZE = env.int("KAFKA_PRODUCER_CALLBACK_BATCH_SIZE", default=10000)
 
+
 BIFROST_ENABLED = env.bool("BIFROST_ENABLED", default=False)
+BIFROST_BUSINESS_CHANGES_TABLE = env.str("BIFROST_BUSINESS_CHANGES_TABLE", default="bifrost.business_changes")
 
 # Logging:
 def _get_logging_config(silent_loggers: t.Optional[str] = None):

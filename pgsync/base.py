@@ -895,6 +895,24 @@ class Base(object):
         with self.engine.connect() as conn:
             return conn.execute(statement).fetchone()
 
+    def fetchmany_business_changes(
+        self,
+        statement: sa.sql.Select,
+        chunk_size: t.Optional[int] = None,
+        stream_results: t.Optional[bool] = None,
+    ):
+        chunk_size = chunk_size or QUERY_CHUNK_SIZE
+        stream_results = stream_results or STREAM_RESULTS
+        with self.engine.connect() as conn:
+            result = conn.execution_options(
+                stream_results=stream_results
+            ).execute(statement)
+            for partition in result.partitions(chunk_size):
+                for row in partition:
+                    yield row
+            result.close()
+        self.engine.clear_compiled_cache()
+
     def fetchall(
         self,
         statement: sa.sql.Select,
