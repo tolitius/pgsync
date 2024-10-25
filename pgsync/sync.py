@@ -455,44 +455,47 @@ class Sync(Base, metaclass=Singleton):
             logger.debug(f"should_skip_event: skipping event, event[\"old\"] and event[\"new\"] is set to None and tg_op is {event['tg_op']}")
             return True
 
-        if event['indices'] is None:
-            logger.debug(f"should_skip_event: skipping event, event[\"indices\"] is set to None")
-            return True
-        elif event['indices'] != type(None):
-            if self.index not in event['indices']:
-                logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
+        match event['indices']:
+            case None:
+                logger.debug(f"should_skip_event: skipping event, event[\"indices\"] is set to None")
                 return True
+            case type(None):
+                # this case is taken when event come from replication slot
+                pass
+            case _:
+                if self.index not in event['indices']:
+                    logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
+                    return True
+ 
+#        if event['indices'] is None:
+#            logger.debug(f"should_skip_event: skipping event, event[\"indices\"] is set to None")
+#            return True
+#        elif event['indices'] != type(None):
+#            if self.index not in event['indices']:
+#                logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
+#                return True
 
-        if (event['schema'], event['table']) in self._schema_fields:
-            match event[CHANGED_FIELDS]:
-                case None:
-                    if event['tg_op'] == 'UPDATE':
-                        logger.debug(f"should_skip_event: skipping event, UPDATE event have to have changed_fields set")
-                        return True
-                case type(None):
-                    # this case is taken when event come from replication slot
-                    pass
-                case _:
-                    skip_status = True
-                    for column in event[CHANGED_FIELDS]:
-                        if column in self._schema_fields[(event['schema'], event['table'])]:
-                            skip_status = False
-                            break
-                    if skip_status:
-                        logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
-                        return True
-#            if event[CHANGED_FIELDS] is not None and event[CHANGED_FIELDS] != type(None):
-#                skip_status = True
-#                for column in event[CHANGED_FIELDS]:
-#                    if column in self._schema_fields[(event['schema'], event['table'])]:
-#                        skip_status = False
-#                        break
-#                if skip_status:
-#                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
-#                    return True
-        else:
+        if (event['schema'], event['table']) not in self._schema_fields:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
+
+        match event[CHANGED_FIELDS]:
+            case None:
+                if event['tg_op'] == 'UPDATE':
+                    logger.debug(f"should_skip_event: skipping event, UPDATE event have to have changed_fields set")
+                    return True
+            case type(None):
+                # this case is taken when event come from replication slot
+                pass
+            case _:
+                should_skip_status = True
+                for column in event[CHANGED_FIELDS]:
+                    if column in self._schema_fields[(event['schema'], event['table'])]:
+                        should_skip_status = False
+                        break
+                if should_skip_status:
+                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
+                    return True
 
         new = event['new']
         if new:
@@ -1418,30 +1421,14 @@ class Sync(Base, metaclass=Singleton):
         txmin: t.Optional[int] = None,
         txmax: t.Optional[int] = None,
     ) -> None:
-        logger.debug(
-            f'reading {settings.BIFROST_BUSINESS_CHANGES_TABLE} table'
-        )
+        """Pull lost transactions from bisness changes table, and apply them."""
+
+        logger.debug(f'reading lost transactios from {settings.BIFROST_BUSINESS_CHANGES_TABLE} table')
 
         payloads: list = []
-        filters: list = []
-
-        query: sa.sql.Select = sa.select(
-            sa.text("JSON_BUILD_OBJECT('xmin', transaction_id, 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
-        ).select_from(sa.text(settings.BIFROST_BUSINESS_CHANGES_TABLE)).order_by(sa.text("transaction_id"))
-
-        if txmin is not None:
-            filters.append( sa.text(f'transaction_id >= {txmin}'))
-
-        if txmax is not None:
-            filters.append( sa.text(f'transaction_id < {txmax}'))
-
-        if filters:
-            query = query.where(sa.and_(*filters))
-
-        logger.debug(f"applying the lost transactions, SQL: {query}")
 
         for i, (payload) in enumerate(
-            self.fetchmany_business_changes(query)
+            self.fetch_chanked_rows(self.make_find_business_changes_query(txmin=txmin, txmax=txmax))
         ):
             self.count['xlog'] += 1
             payload = payload._mapping['json_build_object']
@@ -1470,15 +1457,15 @@ class Sync(Base, metaclass=Singleton):
             self.index, self.sync(txmin=txmin, txmax=txmax)
         )
         logger.debug(f"pulled initial set of events from the database")
-        if not settings.BIFROST_ENABLED:
-            # now sync up to txmax to capture everything we may have missed
-           self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
-           self._truncate = True
-        else:
+        if settings.BIFROST_ENABLED:
            if txmin is not None:
                self.apply_business_changes(txmin=txmin, txmax=txmax)
            else:
                self.apply_business_changes(txmin=txmax)
+        else:
+            # now sync up to txmax to capture everything we may have missed
+           self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
+           self._truncate = True
         self.checkpoint: int = txmax or self.txid_current
 
     @threaded
