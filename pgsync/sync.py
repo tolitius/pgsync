@@ -467,14 +467,6 @@ class Sync(Base, metaclass=Singleton):
                     logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                     return True
  
-#        if event['indices'] is None:
-#            logger.debug(f"should_skip_event: skipping event, event[\"indices\"] is set to None")
-#            return True
-#        elif event['indices'] != type(None):
-#            if self.index not in event['indices']:
-#                logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
-#                return True
-
         if (event['schema'], event['table']) not in self._schema_fields:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
@@ -488,12 +480,12 @@ class Sync(Base, metaclass=Singleton):
                 # this case is taken when event come from replication slot
                 pass
             case _:
-                should_skip_status = True
+                should_skip_event = True
                 for column in event[CHANGED_FIELDS]:
                     if column in self._schema_fields[(event['schema'], event['table'])]:
-                        should_skip_status = False
+                        should_skip_event = False
                         break
-                if should_skip_status:
+                if should_skip_event:
                     logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
                     return True
 
@@ -1428,7 +1420,7 @@ class Sync(Base, metaclass=Singleton):
         payloads: list = []
 
         for i, (payload) in enumerate(
-            self.fetch_chanked_rows(self.make_find_business_changes_query(txmin=txmin, txmax=txmax))
+            self.fetch_rows_by_chunk(self.make_find_business_changes_query(txmin=txmin, txmax=txmax))
         ):
             self.count['xlog'] += 1
             payload = payload._mapping['json_build_object']

@@ -920,13 +920,13 @@ class Base(object):
         logger.debug(f"make_find_business_changes_query, SQL: {statement}")
         return statement
 
-    def fetch_chanked_rows(
+    def fetch_rows_by_chunk(
         self,
         statement: sa.sql.Select,
         chunk_size: t.Optional[int] = None,
         stream_results: t.Optional[bool] = None,
     ):
-        """Fetch rows by chank from a query statement and yield them."""
+        """Fetch rows by chunk from a query statement and yield them."""
         chunk_size = chunk_size or QUERY_CHUNK_SIZE
         stream_results = stream_results or STREAM_RESULTS
         with self.engine.connect() as conn:
