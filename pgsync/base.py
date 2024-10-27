@@ -32,6 +32,7 @@ from .settings import (
     QUERY_CHUNK_SIZE,
     STREAM_RESULTS,
     BIFROST_ENABLED,
+    BIFROST_BUSINESS_CHANGES_TABLE
 )
 from .trigger import CREATE_TRIGGER_TEMPLATE, CREATE_BIFROST_TRIGGER_TEMPLATE
 from .urls import get_postgres_url
@@ -894,6 +895,49 @@ class Base(object):
 
         with self.engine.connect() as conn:
             return conn.execute(statement).fetchone()
+
+    def make_find_business_changes_query(
+        self,
+        txmin: t.Optional[int] = None,
+        txmax: t.Optional[int] = None,
+    ) -> sa.sql.Select:
+
+        filters: list = []
+
+        if txmin is not None:
+            filters.append(sa.text(f'transaction_id >= {txmin}'))
+
+        if txmax is not None:
+            filters.append(sa.text(f'transaction_id < {txmax}'))
+
+        statement: sa.sql.Select = sa.select(
+          sa.text("JSON_BUILD_OBJECT('xmin', transaction_id, 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
+        ).select_from(sa.text(BIFROST_BUSINESS_CHANGES_TABLE)).order_by(sa.text("transaction_id"))
+
+        if filters:
+            statement = statement.where(sa.and_(*filters))
+
+        logger.debug(f"make_find_business_changes_query, SQL: {statement}")
+        return statement
+
+    def fetch_rows_by_chunk(
+        self,
+        statement: sa.sql.Select,
+        chunk_size: t.Optional[int] = None,
+        stream_results: t.Optional[bool] = None,
+    ):
+        """Fetch rows by chunk from a query statement and yield them."""
+        chunk_size = chunk_size or QUERY_CHUNK_SIZE
+        stream_results = stream_results or STREAM_RESULTS
+        with self.engine.connect() as conn:
+            result = conn.execution_options(
+                stream_results=stream_results
+            ).execute(statement)
+            for partition in result.partitions(chunk_size):
+                for row in partition:
+                    yield row
+            result.close()
+        self.engine.clear_compiled_cache()
 
     def fetchall(
         self,
