@@ -466,7 +466,7 @@ class Sync(Base, metaclass=Singleton):
                 if self.index not in event['indices']:
                     logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                     return True
- 
+
         if (event['schema'], event['table']) not in self._schema_fields:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
@@ -1143,7 +1143,15 @@ class Sync(Base, metaclass=Singleton):
         count: int = self.fetchcount(node._subquery)
 
         logger.debug(f"sync started: {count} documents to sync")
-        log_every: int = 100
+        log_every: int = 100 if count >= 100 else count
+
+        # logger.debug(f"database: querying for {count} documents")
+        # # logger.debug(f"database: {node._subquery}")
+        # rows = self.fetchmany(node._subquery)
+        # for i, (keys, row, primary_keys) in enumerate(rows):
+        #     # logger.debug(f"database: read {row}")
+        #     pass
+        # logger.debug(f"database: done querying for {count} documents")
 
         for i, (keys, row, primary_keys) in enumerate(
             self.fetchmany(node._subquery)
@@ -1152,9 +1160,6 @@ class Sync(Base, metaclass=Singleton):
             row: dict = Transform.transform(row, self.nodes)
 
             row[META] = Transform.get_primary_keys(keys)
-
-            if i % log_every == 0:
-                logger.debug(f"synced {i} documents (batch #{( i // log_every )} x {log_every})")
 
             if self.verbose:
                 print(f"{(i+1)})")
@@ -1187,6 +1192,10 @@ class Sync(Base, metaclass=Singleton):
 
             if settings.KAFKA_ENABLED:
                 self.publish_to_kafka(doc, txmin, txmax)
+
+            if i % log_every == 0 or i == count - 1:
+                batch_number = i // log_every if log_every > 0 else 0
+                logger.debug(f"synced {i+1} documents (batch #{batch_number} x {log_every})")
 
             yield doc
 
@@ -1438,7 +1447,7 @@ class Sync(Base, metaclass=Singleton):
 
         if payloads:
             self.redis.push(payloads)
- 
+
     def pull(self) -> None:
         """Pull data from db."""
         txmin: int = self.checkpoint
