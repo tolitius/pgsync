@@ -671,7 +671,7 @@ class Sync(Base, metaclass=Singleton):
         foreign_values: list = [
             payload.new.get(key) for key in foreign_keys[node.name]
         ]
-        for key in [key.name for key in node.primary_keys]:
+        for key in [key.name for key in node.primary_keys if not isinstance(key.type, sa.Boolean)]:
             for value in foreign_values:
                 if value:
                     fields[key].append(value)

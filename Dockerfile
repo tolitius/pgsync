@@ -8,7 +8,9 @@ RUN apt update \
  && apt-get install -y procps \
  && apt install -y vim \
  && apt install -y jq \
- && apt install -y curl
+ && apt install -y curl \
+ && apt install -y tmux \
+ && apt clean all
 
 WORKDIR /code
 
