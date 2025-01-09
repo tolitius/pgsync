@@ -28,9 +28,11 @@ from .exc import (
 from .settings import (
     PG_SSLMODE,
     PG_SSLROOTCERT,
+    PG_APPLICATION_NAME,
     QUERY_CHUNK_SIZE,
     STREAM_RESULTS,
     BIFROST_ENABLED,
+    BIFROST_BUSINESS_CHANGES_TABLE
 )
 from .trigger import CREATE_TRIGGER_TEMPLATE, CREATE_BIFROST_TRIGGER_TEMPLATE
 from .urls import get_postgres_url
@@ -74,7 +76,7 @@ class Payload(object):
         indices (List[str]): The indices of the affected rows (for UPDATE and DELETE operations).
     """
 
-    __slots__ = ("tg_op", "table", "schema", "old", "new", "xmin", "indices")
+    __slots__ = ("tg_op", "table", "schema", "old", "new", "xmin", "indices", "changed_fields")
 
     def __init__(
         self,
@@ -85,6 +87,7 @@ class Payload(object):
         new: dict = t.Optional[None],
         xmin: int = t.Optional[None],
         indices: t.List[str] = t.Optional[None],
+        changed_fields: t.List[str] = t.Optional[None],
     ):
         self.tg_op: str = tg_op
         self.table: str = table
@@ -93,12 +96,13 @@ class Payload(object):
         self.new: dict = new or {}
         self.xmin: str = xmin
         self.indices: t.List[str] = indices
+        self.changed_fields: t.List[str] = changed_fields
 
     def to_slot(self):
         return {key : getattr(self, key, None) for key in self.__slots__}
 
     def __repr__(self):
-        return f'Payload("tg_op: {self.tg_op}, table: {self.table}, schema: {self.schema}, old: {self.old}, new: {self.new}, xmin: {self.xmin}, indices: {self.indices})'
+        return f'Payload("tg_op: {self.tg_op}, table: {self.table}, schema: {self.schema}, old: {self.old}, new: {self.new}, xmin: {self.xmin}, indices: {self.indices}, changed_fields: {self.changed_fields})'
 
     @property
     def data(self) -> dict:
@@ -892,6 +896,49 @@ class Base(object):
         with self.engine.connect() as conn:
             return conn.execute(statement).fetchone()
 
+    def make_find_business_changes_query(
+        self,
+        txmin: t.Optional[int] = None,
+        txmax: t.Optional[int] = None,
+    ) -> sa.sql.Select:
+
+        filters: list = []
+
+        if txmin is not None:
+            filters.append(sa.text(f'transaction_id >= {txmin}'))
+
+        if txmax is not None:
+            filters.append(sa.text(f'transaction_id < {txmax}'))
+
+        statement: sa.sql.Select = sa.select(
+          sa.text("JSON_BUILD_OBJECT('xmin', transaction_id, 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
+        ).select_from(sa.text(BIFROST_BUSINESS_CHANGES_TABLE)).order_by(sa.text("transaction_id"))
+
+        if filters:
+            statement = statement.where(sa.and_(*filters))
+
+        logger.debug(f"make_find_business_changes_query, SQL: {statement}")
+        return statement
+
+    def fetch_rows_by_chunk(
+        self,
+        statement: sa.sql.Select,
+        chunk_size: t.Optional[int] = None,
+        stream_results: t.Optional[bool] = None,
+    ):
+        """Fetch rows by chunk from a query statement and yield them."""
+        chunk_size = chunk_size or QUERY_CHUNK_SIZE
+        stream_results = stream_results or STREAM_RESULTS
+        with self.engine.connect() as conn:
+            result = conn.execution_options(
+                stream_results=stream_results
+            ).execute(statement)
+            for partition in result.partitions(chunk_size):
+                for row in partition:
+                    yield row
+            result.close()
+        self.engine.clear_compiled_cache()
+
     def fetchall(
         self,
         statement: sa.sql.Select,
@@ -1026,10 +1073,12 @@ def _pg_engine(
     echo: bool = False,
     sslmode: t.Optional[str] = None,
     sslrootcert: t.Optional[str] = None,
+    application_name: t.Optional[str] = None,
 ) -> sa.engine.Engine:
     connect_args: dict = {}
     sslmode = sslmode or PG_SSLMODE
     sslrootcert = sslrootcert or PG_SSLROOTCERT
+    connect_args["application_name"] = application_name or PG_APPLICATION_NAME
 
     if sslmode:
         if sslmode not in SSL_MODES:

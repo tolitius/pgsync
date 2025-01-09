@@ -5,6 +5,7 @@ The trigger function constructs a notification as a JSON object and sends it to 
 The notification contains information about the updated table, the operation performed, the old and new rows, and the indices.
 """
 
+from .settings import BIFROST_BUSINESS_CHANGES_TABLE
 from .constants import MATERIALIZED_VIEW, TRIGGER_FUNC, CHANGED_FIELDS
 
 CREATE_BIFROST_TRIGGER_TEMPLATE = f"""
@@ -88,7 +89,7 @@ BEGIN
         PERFORM PG_NOTIFY(channel, notification::TEXT);
 
         -- track the changes in business_changes table as well
-        insert into bifrost.business_changes (
+        insert into {BIFROST_BUSINESS_CHANGES_TABLE} (
             transaction_id,
             new_row,
             old_row,
@@ -119,7 +120,7 @@ BEGIN
 
         BEGIN
             -- track the changes in business_changes table as well
-            insert into bifrost.business_changes (
+            insert into {BIFROST_BUSINESS_CHANGES_TABLE} (
                 transaction_id,
                 new_row,
                 old_row,

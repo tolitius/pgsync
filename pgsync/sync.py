@@ -11,6 +11,7 @@ import sys
 import time
 import typing as t
 from collections import defaultdict
+from threading import current_thread
 
 import click
 import sqlalchemy as sa
@@ -118,19 +119,28 @@ class Sync(Base, metaclass=Singleton):
         self.query_builder: QueryBuilder = QueryBuilder(verbose=True)
         self.count: dict = dict(xlog=0, db=0, redis=0, skip_redis=0, skip_xlog=0, notifications=Counter())
         self._schema_fields: t.Dict[set] = {}
-        self.valid_tables = {}
-        self.valid_schemas = {}
 
         if not self._snapshot:
-            for node in self.tree.traverse_post_order():
+            for node in self.tree.traverse_breadth_first():
                 key: t.Tuple[str, str] = (node.schema, node.table)
                 column_names = {str(column) for column in node.columns if isinstance(column, str)}
+    
+                if node.relationship.foreign_key.child:
+                    column_names.union(node.relationship.foreign_key.child)
+    
+                if node.relationship.foreign_key.parent:
+                    key_parent: t.Tuple[str, str] = (node.parent.schema, node.parent.table)
+                    if key_parent in self._schema_fields:
+                        self._schema_fields[key_parent].union(node.relationship.foreign_key.parent)
+                    else:
+                        self._schema_fields[key_parent] = set(node.relationship.foreign_key.parent)
+    
                 if key in self._schema_fields:
                     self._schema_fields[key].union(column_names)
                 else:
                     self._schema_fields[key] = column_names
     
-            logger.info(f"gist pgsync schema attributes: {self._schema_fields}")
+            logger.info(f"configured custom pgsync schema attributes: {self._schema_fields}")
     
             self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
             self.valid_schemas = {schema for schema, _ in self.valid_tables}
@@ -138,7 +148,7 @@ class Sync(Base, metaclass=Singleton):
             logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
             logger.info(f"valid schemas as per pgsync schema: {self.valid_schemas}")
 
-        if settings.KAFKA_ENABLED and not self._snapshot:
+        if settings.KAFKA_ENABLED:
 
             config = {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
@@ -161,45 +171,46 @@ class Sync(Base, metaclass=Singleton):
 
         self.connect()
 
-        max_replication_slots: t.Optional[str] = self.pg_settings(
-            "max_replication_slots"
-        )
-        try:
-            if int(max_replication_slots) < 1:
-                raise TypeError
-        except TypeError:
-            raise RuntimeError(
-                "Ensure there is at least one replication slot defined "
-                "by setting max_replication_slots = 1"
+        if not settings.BIFROST_ENABLED:
+            max_replication_slots: t.Optional[str] = self.pg_settings(
+                "max_replication_slots"
             )
+            try:
+                if int(max_replication_slots) < 1:
+                    raise TypeError
+            except TypeError:
+                raise RuntimeError(
+                    "Ensure there is at least one replication slot defined "
+                    "by setting max_replication_slots = 1"
+                )
 
-        wal_level: t.Optional[str] = self.pg_settings("wal_level")
-        if not wal_level or wal_level.lower() != "logical":
-            raise RuntimeError(
-                "Enable logical decoding by setting wal_level = logical"
+            wal_level: t.Optional[str] = self.pg_settings("wal_level")
+            if not wal_level or wal_level.lower() != "logical":
+                raise RuntimeError(
+                    "Enable logical decoding by setting wal_level = logical"
+                )
+
+            if settings.REPLICATION_SLOT_CREATE_CHECK:
+                self._can_create_replication_slot("_tmp_")
+
+            rds_logical_replication: t.Optional[str] = self.pg_settings(
+                "rds.logical_replication"
             )
+            if (
+                rds_logical_replication
+                and rds_logical_replication.lower() == "off"
+            ):
+                raise RDSError("rds.logical_replication is not enabled")
 
-        if settings.REPLICATION_SLOT_CREATE_CHECK:
-            self._can_create_replication_slot("_tmp_")
-
-        rds_logical_replication: t.Optional[str] = self.pg_settings(
-            "rds.logical_replication"
-        )
-        if (
-            rds_logical_replication
-            and rds_logical_replication.lower() == "off"
-        ):
-            raise RDSError("rds.logical_replication is not enabled")
+            # ensure we have run bootstrap and the replication slot exists
+            if repl_slots and not self.replication_slots(self.__name):
+                raise RuntimeError(
+                    f'Replication slot "{self.__name}" does not exist.\n'
+                    f'Make sure you have run the "bootstrap" command.'
+                )
 
         if self.index is None:
             raise ValueError("Index is missing for doc")
-
-        # ensure we have run bootstrap and the replication slot exists
-        if repl_slots and not self.replication_slots(self.__name):
-            raise RuntimeError(
-                f'Replication slot "{self.__name}" does not exist.\n'
-                f'Make sure you have run the "bootstrap" command.'
-            )
 
         # ensure the checkpoint dirpath is valid
         if not os.path.exists(settings.CHECKPOINT_PATH):
@@ -341,7 +352,8 @@ class Sync(Base, metaclass=Singleton):
                 self.create_triggers(
                     schema, tables=tables, join_queries=join_queries
                 )
-        self.create_replication_slot(self.__name)
+            if not settings.BIFROST_ENABLED:
+                self.create_replication_slot(self.__name)
 
     def teardown(self, drop_view: bool = True) -> None:
         """Drop the database triggers and replication slot."""
@@ -432,8 +444,7 @@ class Sync(Base, metaclass=Singleton):
         expects an event payload from postgres notification queue
         that has two keys: 'new' and 'old':
 
-        Payload(
-            ...
+        Payload( ...
             old={'id': 1, 'foreign_1_id': 2, 'foreign_2_id': 12},
             new={'id': 4, 'foreign_1_id': 3, 'foreign_2_id': None},
         ),
@@ -449,25 +460,39 @@ class Sync(Base, metaclass=Singleton):
             logger.debug(f"should_skip_event: skipping event, event[\"old\"] and event[\"new\"] is set to None and tg_op is {event['tg_op']}")
             return True
 
-        if event['indices'] is not None:
-            # event['indices'] set to None when pgsync parsing replication slot
-            if self.index in [event['indices']]:
-                logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
+        match event['indices']:
+            case None:
+                logger.debug(f"should_skip_event: skipping event, event[\"indices\"] is set to None")
                 return True
-
-        if (event['schema'], event['table']) in self._schema_fields:
-            if CHANGED_FIELDS in event and event[CHANGED_FIELDS] is not None:
-                skip_status = True
-                for column in event[CHANGED_FIELDS]:
-                    if column in self._schema_fields[(event['schema'], event['table'])]:
-                        skip_status = False
-                        break
-                if skip_status:
-                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
+            case type(None):
+                # this case is taken when event come from replication slot
+                pass
+            case _:
+                if self.index not in event['indices']:
+                    logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                     return True
-        else:
+
+        if (event['schema'], event['table']) not in self._schema_fields:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
+
+        match event[CHANGED_FIELDS]:
+            case None:
+                if event['tg_op'] == 'UPDATE':
+                    logger.debug(f"should_skip_event: skipping event, UPDATE event have to have changed_fields set")
+                    return True
+            case type(None):
+                # this case is taken when event come from replication slot
+                pass
+            case _:
+                should_skip_event = True
+                for column in event[CHANGED_FIELDS]:
+                    if column in self._schema_fields[(event['schema'], event['table'])]:
+                        should_skip_event = False
+                        break
+                if should_skip_event:
+                    logger.debug(f"should_skip_event: skipping the event with these fields [{event[CHANGED_FIELDS]}] modified since they are not in the configured pgsync JSON schema for {event['schema']}.{event['table']} {self._schema_fields[(event['schema'], event['table'])]}")
+                    return True
 
         new = event['new']
         if new:
@@ -1122,62 +1147,62 @@ class Sync(Base, metaclass=Singleton):
 
         count: int = self.fetchcount(node._subquery)
 
-        logger.debug(f"sync started: {count} events to sync")
+        logger.debug(f"sync started: {count} documents to sync")
+        log_every: int = 100 if count >= 100 else count
 
-        with click.progressbar(
-            length=count,
-            show_pos=True,
-            show_percent=True,
-            show_eta=True,
-            fill_char="=",
-            empty_char="-",
-            width=50,
-        ) as bar:
-            for i, (keys, row, primary_keys) in enumerate(
-                self.fetchmany(node._subquery)
+        # logger.debug(f"database: querying for {count} documents")
+        # # logger.debug(f"database: {node._subquery}")
+        # rows = self.fetchmany(node._subquery)
+        # for i, (keys, row, primary_keys) in enumerate(rows):
+        #     # logger.debug(f"database: read {row}")
+        #     pass
+        # logger.debug(f"database: done querying for {count} documents")
+
+        for i, (keys, row, primary_keys) in enumerate(
+            self.fetchmany(node._subquery)
+        ):
+
+            row: dict = Transform.transform(row, self.nodes)
+
+            row[META] = Transform.get_primary_keys(keys)
+
+            if self.verbose:
+                print(f"{(i+1)})")
+                print(f"pkeys: {primary_keys}")
+                pprint.pprint(row)
+                print("-" * 10)
+
+            doc: dict = {
+                "_id": self.get_doc_id(primary_keys, node.table),
+                "_index": self.index,
+                "_source": row,
+            }
+
+            if self.routing:
+                doc["_routing"] = row[self.routing]
+
+            if (
+                self.search_client.major_version < 7
+                and not self.search_client.is_opensearch
             ):
-                bar.update(1)
+                doc["_type"] = "_doc"
 
-                row: dict = Transform.transform(row, self.nodes)
+            if self._plugins:
+                doc = next(self._plugins.transform([doc]))
+                if not doc:
+                    continue
 
-                row[META] = Transform.get_primary_keys(keys)
+            if self.pipeline:
+                doc["pipeline"] = self.pipeline
 
-                if i % 100 == 0:
-                    logger.debug(f"synced {i} events")
+            if settings.KAFKA_ENABLED:
+                self.publish_to_kafka(doc, txmin, txmax)
 
-                if self.verbose:
-                    print(f"{(i+1)})")
-                    print(f"pkeys: {primary_keys}")
-                    pprint.pprint(row)
-                    print("-" * 10)
+            if i % log_every == 0 or i == count - 1:
+                batch_number = i // log_every if log_every > 0 else 0
+                logger.debug(f"synced {i+1} documents (batch #{batch_number} x {log_every})")
 
-                doc: dict = {
-                    "_id": self.get_doc_id(primary_keys, node.table),
-                    "_index": self.index,
-                    "_source": row,
-                }
-
-                if self.routing:
-                    doc["_routing"] = row[self.routing]
-
-                if (
-                    self.search_client.major_version < 7
-                    and not self.search_client.is_opensearch
-                ):
-                    doc["_type"] = "_doc"
-
-                if self._plugins:
-                    doc = next(self._plugins.transform([doc]))
-                    if not doc:
-                        continue
-
-                if self.pipeline:
-                    doc["pipeline"] = self.pipeline
-
-                if settings.KAFKA_ENABLED and not self._snapshot:
-                    self.publish_to_kafka(doc, txmin, txmax)
-
-                yield doc
+            yield doc
 
     @property
     def checkpoint(self) -> int:
@@ -1222,6 +1247,9 @@ class Sync(Base, metaclass=Singleton):
     @exception
     def poll_redis(self) -> None:
         """Consumer which polls Redis continuously."""
+        thread = current_thread()
+        thread.name = thread.name.replace('Thread', 'poll_redis')
+
         while True:
             self._poll_redis()
 
@@ -1250,6 +1278,9 @@ class Sync(Base, metaclass=Singleton):
 
         Receive a notification message from the channel we are listening on
         """
+        thread = current_thread()
+        thread.name = 'poll_db'
+
         conn = self.engine.connect().connection
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         cursor = conn.cursor()
@@ -1287,8 +1318,6 @@ class Sync(Base, metaclass=Singleton):
                 if notification.channel == self.database:
                     payload = json.loads(notification.payload)
                     if not self.should_skip_event(payload):
-                        if CHANGED_FIELDS in payload:
-                            del payload[CHANGED_FIELDS]
                         payloads.append(payload)
                         logger.debug(f"added to payloads from database: {payload}")
                         self.count["db"] += 1
@@ -1314,8 +1343,6 @@ class Sync(Base, metaclass=Singleton):
             if notification.channel == self.database:
                 payload = json.loads(notification.payload)
                 if not self.should_skip_event(payload):
-                    if CHANGED_FIELDS in payload:
-                        del payload[CHANGED_FIELDS]
                     self.redis.push([payload])
                     logger.debug(f"pushed_to_redis: {payload}")
                     self.count["db"] += 1
@@ -1395,6 +1422,37 @@ class Sync(Base, metaclass=Singleton):
         if txids != set([None]):
             self.checkpoint: int = min(min(txids), self.txid_current) - 1
 
+    def apply_business_changes(
+        self,
+        txmin: t.Optional[int] = None,
+        txmax: t.Optional[int] = None,
+    ) -> None:
+        """Pull lost transactions from bisness changes table, and apply them."""
+
+        logger.debug(f'reading lost transactios from {settings.BIFROST_BUSINESS_CHANGES_TABLE} table')
+
+        payloads: list = []
+
+        for i, (payload) in enumerate(
+            self.fetch_rows_by_chunk(self.make_find_business_changes_query(txmin=txmin, txmax=txmax))
+        ):
+            self.count['xlog'] += 1
+            payload = payload._mapping['json_build_object']
+
+            if not self.should_skip_event(payload):
+                payloads.append(payload)
+                logger.debug(f"added to payloads from database: {payload}")
+                self.count["db"] += 1
+            else:
+                self.count["skip_xlog"] += 1
+
+            if len(payloads) >= settings.REDIS_WRITE_CHUNK_SIZE:
+                self.redis.push(payloads)
+                payloads = []
+
+        if payloads:
+            self.redis.push(payloads)
+
     def pull(self) -> None:
         """Pull data from db."""
         txmin: int = self.checkpoint
@@ -1405,17 +1463,26 @@ class Sync(Base, metaclass=Singleton):
             self.index, self.sync(txmin=txmin, txmax=txmax)
         )
         logger.debug(f"pulled initial set of events from the database")
-        if not self._snapshot:
-            # now sync up to txmax to capture everything we may have missed
-            self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
-            self.checkpoint: int = txmax or self.txid_current
-            self._truncate = True
 
+        if not self._snapshot:
+          if settings.BIFROST_ENABLED:
+             if txmin is not None:
+                 self.apply_business_changes(txmin=txmin, txmax=txmax)
+             else:
+                 self.apply_business_changes(txmin=txmax)
+          else:
+              # now sync up to txmax to capture everything we may have missed
+             self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
+             self._truncate = True
+          self.checkpoint: int = txmax or self.txid_current
 
     @threaded
     @exception
     def truncate_slots(self) -> None:
         """Truncate the logical replication slot."""
+        thread = current_thread()
+        thread.name = 'truncate_slots'
+
         while True:
             self._truncate_slots()
             time.sleep(settings.REPLICATION_SLOT_CLEANUP_INTERVAL)
@@ -1434,6 +1501,9 @@ class Sync(Base, metaclass=Singleton):
     @threaded
     @exception
     def status(self) -> None:
+        thread = current_thread()
+        thread.name = 'status'
+
         while True:
             self._status(label="Sync")
             time.sleep(settings.LOG_INTERVAL)
@@ -1497,7 +1567,8 @@ class Sync(Base, metaclass=Singleton):
                     self.poll_redis()
 
             # start a background worker thread to cleanup the replication slot
-            self.truncate_slots()
+            if not settings.BIFROST_ENABLED:
+                self.truncate_slots()
             # start a background worker thread to show status
             self.status()
 
