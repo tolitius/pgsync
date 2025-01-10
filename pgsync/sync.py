@@ -78,6 +78,7 @@ class Sync(Base, metaclass=Singleton):
         num_workers: int = 1,
         producer: bool = True,
         consumer: bool = True,
+        snapshot: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -100,48 +101,52 @@ class Sync(Base, metaclass=Singleton):
         self._truncate: bool = False
         self.producer = producer
         self.consumer = consumer
+        self._snapshot = snapshot
         self.num_workers: int = num_workers
         self._checkpoint_file: str = os.path.join(
             settings.CHECKPOINT_PATH, f".{self.__name}"
         )
-        self.redis: RedisQueue = RedisQueue(self.__name)
         self.tree: Tree = Tree(self.models, nodes=self.nodes)
-        if validate:
-            self.validate(repl_slots=repl_slots)
-            self.create_setting()
+        if not self._snapshot:
+            self.redis: RedisQueue = RedisQueue(self.__name)
+            if validate:
+                self.validate(repl_slots=repl_slots)
+        self.create_setting()
         if self.plugins:
             logger.debug(f"plugins available for transformations are {self.plugins}")
             self._plugins: Plugins = Plugins("plugins", self.plugins)
-        self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
+#         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
+        self.query_builder: QueryBuilder = QueryBuilder(verbose=True)
         self.count: dict = dict(xlog=0, db=0, redis=0, skip_redis=0, skip_xlog=0, notifications=Counter())
-
         self._schema_fields: t.Dict[set] = {}
-        for node in self.tree.traverse_breadth_first():
-            key: t.Tuple[str, str] = (node.schema, node.table)
-            column_names = {str(column) for column in node.columns if isinstance(column, str)}
 
-            if node.relationship.foreign_key.child:
-                column_names.union(node.relationship.foreign_key.child)
-
-            if node.relationship.foreign_key.parent:
-                key_parent: t.Tuple[str, str] = (node.parent.schema, node.parent.table)
-                if key_parent in self._schema_fields:
-                    self._schema_fields[key_parent].union(node.relationship.foreign_key.parent)
+        if not self._snapshot:
+            for node in self.tree.traverse_breadth_first():
+                key: t.Tuple[str, str] = (node.schema, node.table)
+                column_names = {str(column) for column in node.columns if isinstance(column, str)}
+    
+                if node.relationship.foreign_key.child:
+                    column_names.union(node.relationship.foreign_key.child)
+    
+                if node.relationship.foreign_key.parent:
+                    key_parent: t.Tuple[str, str] = (node.parent.schema, node.parent.table)
+                    if key_parent in self._schema_fields:
+                        self._schema_fields[key_parent].union(node.relationship.foreign_key.parent)
+                    else:
+                        self._schema_fields[key_parent] = set(node.relationship.foreign_key.parent)
+    
+                if key in self._schema_fields:
+                    self._schema_fields[key].union(column_names)
                 else:
-                    self._schema_fields[key_parent] = set(node.relationship.foreign_key.parent)
+                    self._schema_fields[key] = column_names
+    
+            logger.info(f"configured custom pgsync schema attributes: {self._schema_fields}")
+    
+            self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
+            self.valid_schemas = {schema for schema, _ in self.valid_tables}
 
-            if key in self._schema_fields:
-                self._schema_fields[key].union(column_names)
-            else:
-                self._schema_fields[key] = column_names
-
-        logger.info(f"configured custom pgsync schema attributes: {self._schema_fields}")
-
-        self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
-        self.valid_schemas = {schema for schema, _ in self.valid_tables}
-
-        logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
-        logger.info(f"valid schemas as per pgsync schema: {self.valid_schemas}")
+            logger.info(f"valid tables as per pgsync schema: {self.valid_tables}")
+            logger.info(f"valid schemas as per pgsync schema: {self.valid_schemas}")
 
         if settings.KAFKA_ENABLED:
 
@@ -1458,16 +1463,18 @@ class Sync(Base, metaclass=Singleton):
             self.index, self.sync(txmin=txmin, txmax=txmax)
         )
         logger.debug(f"pulled initial set of events from the database")
-        if settings.BIFROST_ENABLED:
-           if txmin is not None:
-               self.apply_business_changes(txmin=txmin, txmax=txmax)
-           else:
-               self.apply_business_changes(txmin=txmax)
-        else:
-            # now sync up to txmax to capture everything we may have missed
-           self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
-           self._truncate = True
-        self.checkpoint: int = txmax or self.txid_current
+
+        if not self._snapshot:
+          if settings.BIFROST_ENABLED:
+             if txmin is not None:
+                 self.apply_business_changes(txmin=txmin, txmax=txmax)
+             else:
+                 self.apply_business_changes(txmin=txmax)
+          else:
+              # now sync up to txmax to capture everything we may have missed
+             self.logical_slot_changes(txmin=txmin, txmax=txmax, upto_nchanges=None)
+             self._truncate = True
+          self.checkpoint: int = txmax or self.txid_current
 
     @threaded
     @exception
@@ -1604,6 +1611,13 @@ class Sync(Base, metaclass=Singleton):
     cls=MutuallyExclusiveOption,
     mutually_exclusive=["daemon"],
 )
+@click.option(
+    "--snapshot",
+    is_flag=True,
+    help="Snapshot mode (Incompatible with -d)",
+    cls=MutuallyExclusiveOption,
+    mutually_exclusive=["daemon"],
+)
 @click.option("--host", "-h", help="PG_HOST override")
 @click.option("--password", is_flag=True, help="Prompt for database password")
 @click.option("--port", "-p", help="PG_PORT override", type=int)
@@ -1671,6 +1685,7 @@ def main(
     analyze,
     num_workers,
     polling,
+    snapshot,
     producer,
     consumer,
 ):
@@ -1719,6 +1734,11 @@ def main(
                     sync: Sync = Sync(doc, verbose=verbose, **kwargs)
                     sync.pull()
                 time.sleep(settings.POLL_INTERVAL)
+
+        elif snapshot:
+            for doc in config_loader(config):
+                sync: Sync = Sync(doc, verbose=verbose, snapshot=True, **kwargs)
+                sync.pull()
 
         else:
             for doc in config_loader(config):
