@@ -911,7 +911,7 @@ class Base(object):
             filters.append(sa.text(f'CAST(CAST(xmin AS TEXT) AS BIGINT) < {txmax}'))
 
         statement: sa.sql.Select = sa.select(
-          sa.text("JSON_BUILD_OBJECT('xmin', CAST(CAST(xmin AS TEXT) AS BIGINT), 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
+          sa.text("JSON_BUILD_OBJECT('xmin', xmin, 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
         ).select_from(sa.text(BIFROST_BUSINESS_CHANGES_TABLE)).order_by(sa.text("recorded_at"))
 
         if filters:
