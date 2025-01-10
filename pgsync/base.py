@@ -905,14 +905,14 @@ class Base(object):
         filters: list = []
 
         if txmin is not None:
-            filters.append(sa.text(f'transaction_id >= {txmin}'))
+            filters.append(sa.text(f'CAST(CAST(xmin AS TEXT) AS BIGINT) >= {txmin}'))
 
         if txmax is not None:
-            filters.append(sa.text(f'transaction_id < {txmax}'))
+            filters.append(sa.text(f'CAST(CAST(xmin AS TEXT) AS BIGINT) < {txmax}'))
 
         statement: sa.sql.Select = sa.select(
-          sa.text("JSON_BUILD_OBJECT('xmin', transaction_id, 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
-        ).select_from(sa.text(BIFROST_BUSINESS_CHANGES_TABLE)).order_by(sa.text("transaction_id"))
+          sa.text("JSON_BUILD_OBJECT('xmin', CAST(CAST(xmin AS TEXT) AS BIGINT), 'new', new_row, 'old', old_row, 'indices', indices, 'tg_op', tg_op, 'table', table_name, 'schema', schema_name, 'changed_fields', changed_fields)")
+        ).select_from(sa.text(BIFROST_BUSINESS_CHANGES_TABLE)).order_by(sa.text("recorded_at"))
 
         if filters:
             statement = statement.where(sa.and_(*filters))
