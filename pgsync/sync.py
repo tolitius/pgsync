@@ -482,7 +482,7 @@ class Sync(Base, metaclass=Singleton):
                     logger.debug(f"should_skip_event: skipping event, UPDATE event have to have changed_fields set")
                     return True
                 if settings.FORCE_UPDATE:
-                    logger.debug(f"should_skip_event: forcing an UPDATE for non change field value since settings.FORCE_UPDATE is set to True")
+                    logger.debug(f"should_skip_event: forcing an UPDATE for an unchanged field value since settings.FORCE_UPDATE is set to True")
                     pass
             case type(None):
                 # this case is taken when event come from replication slot

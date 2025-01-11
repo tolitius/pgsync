@@ -1,0 +1,62 @@
+#!/usr/local/bin/bash
+
+# This script builds and pushes linux docker image on the Apple Silicon hardware
+
+# Constants
+DOCKER_REPO="hub.foobar.net"
+DOCKER_NAMESPACE="multipass"
+LOG_FILE="/tmp/pgsync_build.log"
+
+# Functions
+log() {
+    local MESSAGE="$1"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $MESSAGE" | tee -a "$LOG_FILE"
+}
+
+usage() {
+    echo "mpush: build and push this docker images for \"M\" chip based Macs"
+    echo
+    echo "usage: $0 <tag>"
+    echo
+    echo "arguments:"
+    echo "  tag            the tag for the docker image (e.g., v0.1.42)"
+    echo
+    echo "options:"
+    echo "  -h, --help     show this help message and exit"
+}
+
+validate_input() {
+    if [[ -z "$TAG" ]]; then
+        log "ERROR: need a (version) \"tag\" to build a docker image."
+        echo
+        usage
+        exit 1
+    fi
+}
+
+# Main Script
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+TAG="$1"
+
+validate_input
+
+log "starting docker build for $DOCKER_REPO/$DOCKER_NAMESPACE/pgsync-tolitius:$TAG..."
+
+{
+    sudo docker buildx build \
+        --platform linux/arm64/v8,linux/amd64 \
+        --no-cache \
+        -t "$DOCKER_REPO/$DOCKER_NAMESPACE/pgsync-tolitius:$TAG" \
+        --push .
+} 2>&1 | tee -a "$LOG_FILE"
+
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    log "docker build failed."
+    exit 1
+else
+    log "tag: \"$TAG\" docker image build and push completed successfully."
+fi
