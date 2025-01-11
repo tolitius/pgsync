@@ -124,24 +124,24 @@ class Sync(Base, metaclass=Singleton):
             for node in self.tree.traverse_breadth_first():
                 key: t.Tuple[str, str] = (node.schema, node.table)
                 column_names = {str(column) for column in node.columns if isinstance(column, str)}
-    
+
                 if node.relationship.foreign_key.child:
                     column_names.union(node.relationship.foreign_key.child)
-    
+
                 if node.relationship.foreign_key.parent:
                     key_parent: t.Tuple[str, str] = (node.parent.schema, node.parent.table)
                     if key_parent in self._schema_fields:
                         self._schema_fields[key_parent].union(node.relationship.foreign_key.parent)
                     else:
                         self._schema_fields[key_parent] = set(node.relationship.foreign_key.parent)
-    
+
                 if key in self._schema_fields:
                     self._schema_fields[key].union(column_names)
                 else:
                     self._schema_fields[key] = column_names
-    
+
             logger.info(f"configured custom pgsync schema attributes: {self._schema_fields}")
-    
+
             self.valid_tables = {(node.schema, node.table) for node in self.tree.traverse_breadth_first()}
             self.valid_schemas = {schema for schema, _ in self.valid_tables}
 
@@ -478,9 +478,12 @@ class Sync(Base, metaclass=Singleton):
 
         match event[CHANGED_FIELDS]:
             case None:
-                if event['tg_op'] == 'UPDATE':
+                if event['tg_op'] == 'UPDATE' and not settings.FORCE_UPDATE:
                     logger.debug(f"should_skip_event: skipping event, UPDATE event have to have changed_fields set")
                     return True
+                if settings.FORCE_UPDATE:
+                    logger.debug(f"should_skip_event: forcing an UPDATE for non change field value since settings.FORCE_UPDATE is set to True")
+                    pass
             case type(None):
                 # this case is taken when event come from replication slot
                 pass
