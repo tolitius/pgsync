@@ -9,7 +9,7 @@ import boto3
 import elastic_transport
 import elasticsearch
 import elasticsearch_dsl
-import opensearch_dsl
+# import opensearch_dsl
 import opensearchpy
 from requests_aws4auth import AWS4Auth
 from opensearchpy.helpers.errors import ScanError
@@ -74,9 +74,9 @@ class SearchClient(object):
                 opensearchpy.helpers.streaming_bulk
             )
             self.parallel_bulk: t.Callable = opensearchpy.helpers.parallel_bulk
-            self.Search: t.Callable = opensearch_dsl.Search
-            self.Bool: t.Callable = opensearch_dsl.query.Bool
-            self.Q: t.Callable = opensearch_dsl.Q
+            self.Search: t.Callable = opensearchpy.Search
+            self.Bool: t.Callable = opensearchpy.helpers.query.Bool
+            self.Q: t.Callable = opensearchpy.Q
         else:
             raise RuntimeError("Unknown search client")
 

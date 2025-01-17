@@ -10,6 +10,7 @@ RUN apt update \
  && apt install -y jq \
  && apt install -y curl \
  && apt install -y tmux \
+ && apt install -y less \
  && apt clean all
 
 WORKDIR /code
