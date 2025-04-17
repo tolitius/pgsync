@@ -472,6 +472,7 @@ class Sync(Base, metaclass=Singleton):
                     logger.debug(f"should_skip_event: skipping event, none of the event's index names \"{event['indices']}\" matches pgsync JSON schema name")
                     return True
 
+        # skip if table not in schema
         if (event['schema'], event['table']) not in self._schema_fields:
             logger.debug(f"should_skip_event: skipping event for {event['schema']}.{event['table']} as it's not in the configured pgsync JSON schema")
             return True
@@ -490,7 +491,7 @@ class Sync(Base, metaclass=Singleton):
             case _:
                 should_skip_event = True
                 for column in event[CHANGED_FIELDS]:
-                    if column in self._schema_fields[(event['schema'], event['table'])]:
+                    if column in self._schema_fields[(event['schema'], event['table'])] and column not in settings.SKIP_KEYS:
                         should_skip_event = False
                         break
                 if should_skip_event:
